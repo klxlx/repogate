@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RepoGate · 公开仓库接入检查</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <p class="eyebrow">RepoGate / 第 1 步：取数与文件清单</p>
+      <h1>输入公开 GitHub 仓库地址，先看它真实长什么样</h1>
+      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；压缩包只在内存解析，不落盘。</p>
+    </header>
+
+    <form class="lookup" method="post" action="/">
+      <label class="sr-only" for="repo_url">仓库地址</label>
+      <input
+        id="repo_url"
+        name="repo_url"
+        type="url"
+        required
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="https://github.com/owner/repo"
+        value="{{ repo_url }}"
+      >
+      <button type="submit">取数</button>
+    </form>
+
+    {% if error %}
+    <section class="alert" role="alert">
+      <span class="alert-code">{{ error.code }}</span>
+      <p>{{ error.message }}</p>
+    </section>
+    {% endif %}
+
+    {% if result %}
+    <section class="panel">
+      <div class="panel-head">
+        <h2>{{ result.repo.full_name }}</h2>
+        {% if result.repo.archived %}<span class="tag tag-warn">已归档</span>{% endif %}
+      </div>
+      <dl class="facts">
+        <div><dt>Stars</dt><dd>{{ result.repo.stars }}</dd></div>
+        <div><dt>主要语言</dt><dd>{{ result.repo.language or "未标注" }}</dd></div>
+        <div><dt>License</dt><dd>{{ result.repo.license or "未标注" }}</dd></div>
+        <div><dt>最近推送</dt><dd>{{ result.repo.pushed_at or "未知" }}</dd></div>
+      </dl>
+
+      <table class="anchor">
+        <tbody>
+          <tr><th>ref</th><td>{{ result.ref }}</td></tr>
+          <tr><th>commit</th><td class="mono">{{ result.commit_sha }}</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>扫描范围</h2>
+      <div class="metrics">
+        <div class="metric"><span class="metric-value">{{ result.scope.files_scanned }}</span><span class="metric-label">文件已扫描</span></div>
+        <div class="metric"><span class="metric-value">{{ result.scope.files_skipped }}</span><span class="metric-label">条目已跳过</span></div>
+        <div class="metric"><span class="metric-value">{{ result.scope.bytes_scanned | filesize }}</span><span class="metric-label">文本读取量</span></div>
+        <div class="metric{% if result.scope.truncated %} metric-alert{% endif %}"><span class="metric-value">{{ "是" if result.scope.truncated else "否" }}</span><span class="metric-label">是否截断</span></div>
+      </div>
+      {% if result.scope.truncated %}
+      <p class="truncate-note">截断原因：{{ result.scope.truncate_reason }}</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>文件清单</h2>
+        <span class="note">按路径排序，最多展示前 50 条</span>
+      </div>
+      {% if result.files %}
+      <table class="files">
+        <thead>
+          <tr><th>#</th><th>路径</th><th class="num">大小</th><th>类型</th></tr>
+        </thead>
+        <tbody>
+          {% for file in result.files %}
+          <tr>
+            <td class="num muted">{{ loop.index }}</td>
+            <td class="mono">{{ file.path }}</td>
+            <td class="num">{{ file.size | filesize }}</td>
+            <td>{{ "文本" if file.is_text else "非文本" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">本次没有扫描到符合条件的文本文件。</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <footer class="foot">
+      <p>单仓库最多 3 次 GitHub 请求：仓库元信息、默认分支 commit、zipball。没有逐文件 contents 调用。</p>
+      <p>跳过：.git / node_modules / vendor / dist / build / .venv，二进制与图片视频，压缩包，单文件大于 1MB。限额：解压总量 50MB、文件 2000 个。</p>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# 环境与缓存
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/cache/
+
+# 扫描中间产物一律不允许入库
+*.zip
+*.tar.gz
+*.tgz
+
+# 本地临时文件
+*.log
+.DS_Store
+Thumbs.db

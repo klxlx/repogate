@@ -12,10 +12,13 @@ from .base import SEVERITY_RANK, Rule
 from .deps import R03, R04, R05, is_parseable_manifest
 from .docs import R01, R02, is_readme
 from .evidence import level_of, select
+from .maintenance import R12, R13, R14
 from .portability import R06, R07, R08
 from .secrets import R09, R10, R11, is_secret_candidate
 
-RULES: tuple[Rule, ...] = (R01, R02, R03, R04, R05, R06, R07, R08, R09, R10, R11)
+RULES: tuple[Rule, ...] = (
+    R01, R02, R03, R04, R05, R06, R07, R08, R09, R10, R11, R12, R13, R14
+)
 
 
 @dataclass

@@ -9,9 +9,9 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <p class="eyebrow">RepoGate / 第 4 步（v2.0）：R01–R11</p>
-      <h1>输入公开 GitHub 仓库地址，先看它真实长什么样</h1>
-      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；只按需读取少量说明与依赖清单，不下载其它文件内容。</p>
+      <p class="eyebrow">RepoGate / 第 5 步（v3.0）：R01–R14</p>
+      <h1>这个仓库，能不能进内网？</h1>
+      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；14 条规则合成 0–100 分与一句话裁决。</p>
     </header>
 
     <form class="lookup" method="post" action="/">
@@ -26,7 +26,7 @@
         placeholder="https://github.com/owner/repo"
         value="{{ repo_url }}"
       >
-      <button type="submit">取数</button>
+      <button type="submit">检查</button>
     </form>
 
     {% if error %}
@@ -40,96 +40,201 @@
     {% if tree_slow %}
     <section class="banner" role="status">超大仓库，本次耗时较长（文件树 {{ result.timing.tree_ms }} ms）</section>
     {% endif %}
-    <section class="panel">
-      <div class="panel-head">
-        <h2>{{ result.repo.full_name }}</h2>
-        {% if result.repo.archived %}<span class="tag tag-warn">已归档</span>{% endif %}
-      </div>
-      <dl class="facts">
-        <div><dt>Stars</dt><dd>{{ result.repo.stars }}</dd></div>
-        <div><dt>主要语言</dt><dd>{{ result.repo.language or "未标注" }}</dd></div>
-        <div><dt>License</dt><dd>{{ result.repo.license or "未标注" }}</dd></div>
-        <div><dt>最近推送</dt><dd>{{ result.repo.pushed_at or "未知" }}</dd></div>
-      </dl>
 
-      <table class="anchor">
-        <tbody>
-          <tr><th>ref</th><td>{{ result.ref }}</td></tr>
-          <tr><th>commit</th><td class="mono">{{ result.commit_sha }}</td></tr>
-        </tbody>
-      </table>
-    </section>
-
-    <section class="panel">
-      <h2>扫描范围</h2>
-      <div class="metrics">
-        <div class="metric"><span class="metric-value">{{ result.scope.files_scanned }}</span><span class="metric-label">文件已扫描</span></div>
-        <div class="metric"><span class="metric-value">{{ result.scope.files_skipped }}</span><span class="metric-label">条目已跳过</span></div>
-        <div class="metric"><span class="metric-value">{{ result.scope.bytes_scanned | filesize }}</span><span class="metric-label">文本读取量</span></div>
-        <div class="metric{% if result.scope.truncated %} metric-alert{% endif %}"><span class="metric-value">{{ "是" if result.scope.truncated else "否" }}</span><span class="metric-label">是否截断</span></div>
+    <section class="card verdict-card grade-{{ result.score.grade | lower }}">
+      <div class="score-ring" style="--pct: {{ result.score.total }}">
+        <div class="score-ring-inner">
+          <strong>{{ result.score.total }}</strong>
+          <span>/ 100</span>
+        </div>
       </div>
-      {% if result.scope.truncated %}
-      <p class="truncate-note">截断原因：{{ result.scope.truncate_reason }}</p>
-      {% endif %}
-    </section>
-
-    <section class="panel">
-      <div class="panel-head">
-        <h2>文件清单</h2>
-        <span class="note">按路径排序，最多展示前 50 条</span>
-      </div>
-      {% if result.files %}
-      <table class="files">
-        <thead>
-          <tr><th>#</th><th>路径</th><th class="num">大小</th><th>类型</th></tr>
-        </thead>
-        <tbody>
-          {% for file in result.files %}
-          <tr>
-            <td class="num muted">{{ loop.index }}</td>
-            <td class="mono">{{ file.path }}</td>
-            <td class="num">{{ file.size | filesize }}</td>
-            <td>{{ "文本" if file.is_text else "非文本" }}</td>
-          </tr>
+      <div class="verdict-main">
+        <p class="eyebrow">准入结论</p>
+        <div class="verdict-line">
+          <h2>{{ result.score.verdict }}</h2>
+          <span class="grade grade-{{ result.score.grade | lower }}">{{ result.score.grade }}</span>
+        </div>
+        <p class="repo-line">
+          <span class="mono">{{ result.repo.full_name }}</span>
+          <span class="dot">·</span>
+          <span class="mono">@{{ result.commit_sha[:7] }}</span>
+          <span class="dot">·</span>
+          <span>原始分 {{ result.score.raw_total }}{% if result.score.caps %}，封顶后 {{ result.score.total }}{% endif %}</span>
+        </p>
+        <dl class="keyfacts">
+          <div><dt>阻断项</dt><dd>{{ blocking_count }}</dd></div>
+          <div><dt>高危项</dt><dd>{{ high_count }}</dd></div>
+          <div><dt>内容抽样率</dt><dd>{{ sampling_pct }}</dd></div>
+        </dl>
+        {% if result.score.caps %}
+        <ul class="cap-list">
+          {% for cap in result.score.caps %}
+          <li><strong>上限 {{ cap.limit }}</strong> · {{ cap.reason }}</li>
           {% endfor %}
-        </tbody>
-      </table>
+        </ul>
+        {% else %}
+        <p class="cap-none">未触发封顶，总分等于五维得分之和。</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">证据 / 01</p>
+          <h2>五维得分</h2>
+        </div>
+        <p class="card-hint">点开任一维度，能看到每一笔扣分追到 rule_id 与文件。</p>
+      </div>
+
+      <div class="dim-list">
+        {% for row in dimension_rows %}
+        <details class="dim">
+          <summary>
+            <span class="dim-name">{{ row.dimension.label }}</span>
+            <span class="dim-bar" aria-hidden="true"><span style="width: {{ ((row.dimension.score / row.dimension.weight) * 100) | round(1) }}%"></span></span>
+            <span class="dim-score">{{ row.dimension.score }}<small>/{{ row.dimension.weight }}</small></span>
+            <span class="dim-deduct">{% if row.dimension.deduction %}−{{ row.dimension.deduction }}{% else %}0{% endif %}</span>
+          </summary>
+          <div class="dim-detail">
+            {% if row.deductions %}
+            <ul>
+              {% for item in row.deductions %}
+              <li>
+                <span class="mono">{{ item.rule_id }}</span>
+                <span class="dim-file mono">{{ item.file or "—" }}</span>
+                <span class="dim-reason">{{ item.reason }}</span>
+                <span class="dim-points">{{ item.points }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty">该维度没有扣分。</p>
+            {% endif %}
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">证据 / 02</p>
+          <h2>14 条检查矩阵</h2>
+        </div>
+        <p class="card-hint">悬停任一格可看完整依据（basis）。</p>
+      </div>
+      <div class="matrix">
+        {% for row in check_rows %}
+        <div class="matrix-cell state-{{ row.state }}" title="{{ row.basis }}">
+          <span class="mono">{{ row.rule_id }}</span>
+          <span class="state state-{{ row.state }}">{{ row.label }}</span>
+          <span class="matrix-basis">{{ row.basis }}</span>
+          <span class="matrix-file mono">{{ row.file or "—" }}</span>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">证据 / 03</p>
+          <h2>风险表</h2>
+        </div>
+        <p class="card-hint">按 critical → info 排序；medium 以下默认折叠。</p>
+      </div>
+
+      {% if risk_visible %}
+      <div class="risk-wrap">
+        <table class="risk">
+          <thead>
+            <tr><th>规则</th><th>文件:行</th><th>证据（已掩码）</th><th>影响</th><th>修复建议</th></tr>
+          </thead>
+          <tbody>
+            {% for item in risk_visible %}
+            <tr>
+              <td data-label="规则"><span class="mono">{{ item.rule_id }}</span> <span class="sev sev-{{ item.severity }}">{{ item.severity }}</span></td>
+              <td data-label="文件:行" class="mono risk-file">{{ item.file or "—" }}{% if item.line %}:{{ item.line }}{% endif %}</td>
+              <td data-label="证据" class="evidence">{{ item.evidence_masked }}</td>
+              <td data-label="影响">{{ item.impact }}</td>
+              <td data-label="修复建议">{{ item.fix }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-      <p class="empty">本次没有扫描到符合条件的文本文件。</p>
+      <p class="empty">没有 medium 及以上风险项。</p>
+      {% endif %}
+
+      {% if risk_hidden %}
+      <details class="risk-more">
+        <summary>展开 {{ risk_hidden | length }} 条提示（low / info）</summary>
+        <div class="risk-wrap">
+          <table class="risk">
+            <thead>
+              <tr><th>规则</th><th>文件:行</th><th>证据（已掩码）</th><th>影响</th><th>修复建议</th></tr>
+            </thead>
+            <tbody>
+              {% for item in risk_hidden %}
+              <tr>
+                <td data-label="规则"><span class="mono">{{ item.rule_id }}</span> <span class="sev sev-{{ item.severity }}">{{ item.severity }}</span></td>
+                <td data-label="文件:行" class="mono risk-file">{{ item.file or "—" }}{% if item.line %}:{{ item.line }}{% endif %}</td>
+                <td data-label="证据" class="evidence">{{ item.evidence_masked }}</td>
+                <td data-label="影响">{{ item.impact }}</td>
+                <td data-label="修复建议">{{ item.fix }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
       {% endif %}
     </section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>规则结论</h2>
-        <span class="note">{{ result.checks | length }} 条</span>
-      </div>
-      {% if result.checks %}
-      <table class="findings">
-        <thead>
-          <tr><th>规则</th><th>状态</th><th>依据</th><th>文件</th></tr>
-        </thead>
-        <tbody>
-          {% for check in result.checks %}
-          <tr>
-            <td class="mono">{{ check.rule_id }}</td>
-            <td><span class="state state-{{ check.status }}">{{ {"pass": "通过", "fail": "未通过", "degraded": "降级", "n/a": "不适用"}[check.status] }}</span></td>
-            <td class="evidence">{{ check.basis }}</td>
-            <td class="mono">{{ check.file or "—" }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="empty">本次没有产生规则结论。</p>
-      {% endif %}
+    <section class="card advice-card">
+      <p class="eyebrow">建议</p>
+      <h2>AI 建议</h2>
+      <p class="placeholder">AI 建议将在后续接入。</p>
     </section>
-    {% endif %}
 
     <footer class="foot">
-      <p>单仓库最多 3 次 GitHub API 请求：仓库元信息、默认分支 commit、git/trees；另从 raw.githubusercontent 读取 ≤120 个文本文件（≤8MB、并发 6、单文件 ≤512KB），不调用 contents API、不下载其它文件内容。</p>
-      <p>统计口径：树内全部 blob 计入清单；清单内文本且 ≤1MB 才纳入分析，媒体/二进制/压缩包/超大文件只跳过分析、不跳过计数。清单硬顶：20000 个 blob（触发时按配置/脚本/说明文档/源码/其余的顺序采样）。</p>
+      <div class="foot-grid">
+        <span><b>commit</b> <span class="mono">{{ result.commit_sha }}</span></span>
+        <span><b>扫描时间</b> <span class="mono">{{ scan_time_local }}</span></span>
+        <span><b>引擎</b> <span class="mono">{{ result.engine_version }}</span></span>
+        <span><b>文件数</b> {{ result.scope.files_scanned }} 扫描 / {{ result.scope.files_skipped }} 跳过</span>
+        <span><b>内容抽样率</b> {{ sampling_pct }}</span>
+        <span><b>封顶原因</b> {% if result.score.caps %}{% for cap in result.score.caps %}{{ cap.reason }}{% if not loop.last %}；{% endif %}{% endfor %}{% else %}无{% endif %}</span>
+      </div>
+      <div class="foot-actions">
+        <button type="button" id="export-json" data-filename="{{ result.repo.full_name | replace('/', '-') }}-{{ result.commit_sha[:7] }}.json">导出 JSON</button>
+        <span class="foot-note">导出内容与 POST /api/inspect 的响应完全一致。</span>
+      </div>
     </footer>
+
+    <script type="application/json" id="result-json">{{ result_data | tojson }}</script>
+    <script>
+      (function () {
+        var button = document.getElementById("export-json");
+        var payload = document.getElementById("result-json");
+        if (!button || !payload) return;
+        button.addEventListener("click", function () {
+          var blob = new Blob([payload.textContent], { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var link = document.createElement("a");
+          link.href = url;
+          link.download = button.getAttribute("data-filename") || "repogate.json";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        });
+      })();
+    </script>
+    {% endif %}
   </main>
 </body>
 </html>

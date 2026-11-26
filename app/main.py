@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import datetime as dt
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from .models import (
     SourceInfo,
 )
 from .rules import RULES, evaluate, plan_content_paths
+from .scoring import build_score, score_line
 from .snapshot import build_snapshot
 from .treescan import scan_tree
 
@@ -71,6 +73,84 @@ def _filesize(value: int | None) -> str:
 
 templates.env.filters["filesize"] = _filesize
 
+RULE_DIMENSIONS = {rule.id: rule.dimension for rule in RULES}
+STATE_LABELS = {
+    "pass": "通过",
+    "hint": "提示",
+    "fail": "未通过",
+    "na": "不适用",
+}
+
+
+def _check_rows(checks, findings) -> list[dict]:
+    """页面矩阵：四色状态。pass + 有 low/info、degraded 统一显示「提示」，basis 说明原因。"""
+    by_rule: dict[str, list] = {}
+    for finding in findings:
+        by_rule.setdefault(finding.rule_id, []).append(finding)
+
+    rows = []
+    for check in checks:
+        if check.status == "fail":
+            state = "fail"
+        elif check.status == "n/a":
+            state = "na"
+        elif check.status == "degraded":
+            state = "hint"
+        else:
+            state = "hint" if by_rule.get(check.rule_id) else "pass"
+        rows.append(
+            {
+                "rule_id": check.rule_id,
+                "state": state,
+                "label": STATE_LABELS[state],
+                "basis": check.basis,
+                "file": check.file,
+            }
+        )
+    return rows
+
+
+def _dimension_rows(score) -> list[dict]:
+    by_dimension: dict[str, list] = {}
+    for deduction in score.deductions:
+        dimension = RULE_DIMENSIONS.get(deduction.rule_id, "")
+        by_dimension.setdefault(dimension, []).append(deduction)
+    return [
+        {"dimension": dimension, "deductions": by_dimension.get(dimension.key, [])}
+        for dimension in score.dimensions
+    ]
+
+
+def _local_time(value: str) -> str:
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone().isoformat(timespec="seconds")
+
+
+def _result_context(result: InspectResponse) -> dict:
+    findings = result.findings
+    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    ordered = sorted(
+        findings,
+        key=lambda item: (severity_order[item.severity], item.rule_id, item.file),
+    )
+    return {
+        "result": result,
+        "result_data": result.model_dump(mode="json"),
+        "check_rows": _check_rows(result.checks, findings),
+        "dimension_rows": _dimension_rows(result.score),
+        "risk_visible": [item for item in ordered if item.severity not in ("low", "info")],
+        "risk_hidden": [item for item in ordered if item.severity in ("low", "info")],
+        "blocking_count": sum(1 for item in findings if item.severity == "critical"),
+        "high_count": sum(1 for item in findings if item.severity == "high"),
+        "sampling_pct": f"{result.stats.secret_sampling_ratio * 100:.2f}%",
+        "scan_time_local": _local_time(result.scanned_at),
+    }
+
 
 async def _inspect(repo_url: str) -> InspectResponse:
     owner, repo = parse_repo_url(repo_url)
@@ -90,7 +170,6 @@ async def _inspect(repo_url: str) -> InspectResponse:
     evaluation = evaluate(snapshot)
     findings = evaluation.findings
     checks = evaluation.checks
-
     scope = scan.scope
     stats = scan.stats
     stats.content_requests = content.requests
@@ -105,6 +184,7 @@ async def _inspect(repo_url: str) -> InspectResponse:
     stats.secret_sampling_ratio = (
         round(stats.secret_scan_files / scope.files_scanned, 4) if scope.files_scanned else 0.0
     )
+    score = build_score(findings, stats)
     timing = bundle.timing
     logger.info(
         "inspect ok repo=%s ref=%s sha=%s requests=%d content_requests=%d content_bytes=%d "
@@ -134,6 +214,7 @@ async def _inspect(repo_url: str) -> InspectResponse:
         "checks %s",
         " ".join(f"{check.rule_id}={check.status}" for check in checks),
     )
+    logger.info("score %s", score_line(score))
 
     logger.info(
         "identities scanned=%d + skipped=%d == listed=%d ; listed=%d + unlisted=%d == total=%d",
@@ -164,6 +245,8 @@ async def _inspect(repo_url: str) -> InspectResponse:
         files=scan.files,
         findings=findings,
         checks=checks,
+        score=score,
+        scanned_at=snapshot.scanned_at.isoformat(),
     )
 
 
@@ -207,16 +290,15 @@ async def index_submit(request: Request, repo_url: str = Form(...)) -> HTMLRespo
             {"result": None, "error": error, "repo_url": repo_url},
             status_code=error.http_status,
         )
-    return templates.TemplateResponse(
-        request,
-        "index.html",
+    context = _result_context(result)
+    context.update(
         {
-            "result": result,
             "error": None,
             "repo_url": repo_url,
             "tree_slow": result.timing.tree_slow,
-        },
+        }
     )
+    return templates.TemplateResponse(request, "index.html", context)
 
 
 @app.exception_handler(ScanError)

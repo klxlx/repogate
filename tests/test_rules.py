@@ -12,6 +12,7 @@ from app.rules.deps import (
     detect_start_missing,
 )
 from app.rules.docs import R01, R02, detect_readme_incomplete, detect_readme_missing
+from app.rules.maintenance import R12, R13, R14
 from app.rules.secrets import R09, R10, R11
 from app.snapshot import BlobRef, Snapshot
 
@@ -147,7 +148,7 @@ def test_r04_mostly_floating_is_pass_with_hint() -> None:
     assert outcome.status == "pass"
     assert outcome.finding is None
     assert outcome.extra_findings[0].severity == "low"
-    assert "仅提示 1 条，不扣分" in outcome.basis
+    assert "仅提示 1 条" in outcome.basis
     assert "根目录 package.json" in outcome.basis
 
 
@@ -261,9 +262,10 @@ def test_r05_degrades_when_package_json_unreadable() -> None:
 def test_evaluate_returns_check_per_rule_and_consistent_findings() -> None:
     evaluation = evaluate(snapshot())
 
-    assert len(evaluation.checks) == 11
+    assert len(evaluation.checks) == 14
     assert [check.rule_id for check in evaluation.checks] == [
-        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08",
+        "R09", "R10", "R11", "R12", "R13", "R14",
     ]
     assert all(check.basis.strip() for check in evaluation.checks)
 
@@ -288,3 +290,6 @@ def test_rule_metadata_matches_contract() -> None:
     assert (R10.dimension, R10.severity, R10.needs_content) == ("secrets", "critical", True)
     assert (R11.dimension, R11.severity, R11.needs_content) == ("secrets", "critical", True)
     assert (R05.dimension, R05.severity, R05.points, R05.needs_content) == ("deps", "medium", -4, True)
+    assert (R12.dimension, R12.severity, R12.points, R12.needs_content) == ("maintenance", "low", -4, False)
+    assert (R13.dimension, R13.severity, R13.points, R13.needs_content) == ("maintenance", "low", -3, False)
+    assert (R14.dimension, R14.severity, R14.points, R14.needs_content) == ("maintenance", "low", -3, False)

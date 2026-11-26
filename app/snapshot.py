@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 from dataclasses import dataclass, field
 
 from .treescan import is_excluded_dir, is_safe_path
@@ -28,6 +29,12 @@ class Snapshot:
     raw_windows_scripts: int = 0
     excluded_windows_scripts: int = 0
     unlisted_windows_scripts: int = 0
+    license: str | None = None
+    pushed_at: str | None = None
+    archived: bool = False
+    scanned_at: _dt.datetime = field(
+        default_factory=lambda: _dt.datetime.now(_dt.timezone.utc)
+    )
 
     def shallow_blobs(self) -> list[BlobRef]:
         """根目录与一层子目录：path 中最多一个斜杠。"""
@@ -63,4 +70,7 @@ def build_snapshot(bundle, owner: str, repo: str) -> Snapshot:
         blobs=blobs,
         tree_ref_fallback=bundle.tree_ref_fallback,
         tree_truncated_by_github=bundle.tree_truncated_by_github,
+        license=bundle.repo.get("license"),
+        pushed_at=bundle.repo.get("pushed_at"),
+        archived=bool(bundle.repo.get("archived")),
     )

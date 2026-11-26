@@ -74,19 +74,16 @@ TOKEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 _ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
-_SECRET_KEY_TOKENS = frozenset(
-    {
-        "secret", "token", "password", "passwd", "pwd", "apikey", "api_key",
-        "accesskey", "access_key", "privatekey", "private_key", "credential",
-        "credentials", "auth", "key",
-    }
+# 冻结关键词表（README 同步）：secret|token|password|passwd|pwd|api[_-]?key|
+# access[_-]?key|credential|auth|private。按词边界匹配，避免 AUTHOR 命中 auth。
+_SECRET_KEY_RE = re.compile(
+    r"(?<![a-z])(?:secret|token|password|passwd|pwd|api[_-]?key|access[_-]?key|"
+    r"credential(?:s)?|auth|private)(?![a-z])"
 )
 
 
 def _is_secret_key(key: str) -> bool:
-    return any(
-        token in _SECRET_KEY_TOKENS for token in re.split(r"[^a-z0-9]+", key.lower())
-    )
+    return bool(_SECRET_KEY_RE.search(key.lower()))
 _TEST_FILE_RE = re.compile(
     r"(?i)(^test_.*\.py$|.*_test\.(py|go)$|.*\.(test|spec)\.(js|jsx|ts|tsx)$)"
 )
@@ -137,6 +134,11 @@ def _in_low_dir(path: str) -> bool:
     if _TEST_FILE_RE.match(_basename(path)):
         return True
     return any(segment.lower() in LOW_DIR_SEGMENTS for segment in path.split("/")[:-1])
+
+
+def in_low_dir(path: str) -> bool:
+    """公开给评分层：测试/样例目录的 low 命中不扣分。"""
+    return _in_low_dir(path)
 
 
 def _is_doc(path: str) -> bool:
@@ -242,15 +244,47 @@ class _Hit:
     line: int
     value: str
     label: str
+    context: str = ""
+
+
+_RULE_DEF_CHARS = frozenset("[]{}()|\\*+?")
+_RULE_DEF_WORD_RE = re.compile(
+    r"(?i)\b(?:regex|regexp|pattern|re\.compile|gitleaks|allowlist|rule)\b"
+)
+
+
+def _is_rule_path(path: str) -> bool:
+    """规则/模式定义目录，或 gitleaks.toml 这类规则文件。"""
+    segments = [segment.lower() for segment in path.split("/")[:-1]]
+    if any(segment in {"rules", "patterns"} for segment in segments):
+        return True
+    name = _basename(path).lower()
+    return name == "gitleaks.toml" or "gitleaks" in name or "rule" in name
+
+
+def _has_rule_chars(line: str) -> bool:
+    return any(char in line for char in _RULE_DEF_CHARS)
+
+
+def _is_rule_definition(path: str, line: str) -> bool:
+    """规则文件，或同时含正则元字符与 regex/pattern 等关键字的定义行。
+
+    普通配置字典（如 {"Authorization": "Bearer ..."}）不降级，避免把真实配置误判成规则样例。
+    """
+    if _is_rule_path(path):
+        return True
+    return _has_rule_chars(line) and bool(_RULE_DEF_WORD_RE.search(line))
 
 
 def _severity_for(path: str, ratio: float) -> tuple[str, str, bool]:
-    """返回 (severity, confidence, cap_eligible)。"""
+    """返回 (severity, confidence, cap_eligible)。抽样 <20% 时不封顶。"""
     if _is_doc(path):
         return "info", "medium", False
     if _in_low_dir(path):
         return "low", "medium", False
     if cap_eligible(path, ratio):
+        if ratio < 0.2:
+            return "high", "low", False
         return "critical", "high", True
     return "high", "low", False
 
@@ -374,7 +408,10 @@ def detect_private_key(snapshot: Snapshot) -> RuleOutcome:
         if _in_low_dir(path):
             severity, confidence, capped = "low", "medium", False
         elif cap_eligible(path, ratio):
-            severity, confidence, capped = "critical", "high", True
+            if ratio < 0.2:
+                severity, confidence, capped = "high", "low", False
+            else:
+                severity, confidence, capped = "critical", "high", True
         else:
             severity, confidence, capped = "high", "low", False
         impact = "私钥随代码公开，可被直接用于冒充服务或解密流量"
@@ -440,7 +477,7 @@ def _scan_tokens(path: str, text: str) -> list[_Hit]:
                 if any(start < used_end and end > used_start for used_start, used_end in spans):
                     continue
                 spans.append((start, end))
-                hits.append(_Hit(lineno, match.group(0), label))
+                hits.append(_Hit(lineno, match.group(0), label, line))
     return hits
 
 
@@ -462,7 +499,10 @@ def detect_secret_token(snapshot: Snapshot) -> RuleOutcome:
     critical_count = 0
     for path, hits in per_file:
         real_hits = [hit for hit in hits if not _is_placeholder_token(hit.value)]
-        if _is_doc(path):
+        rule_definition = any(_is_rule_definition(path, hit.context) for hit in hits)
+        if rule_definition:
+            severity, confidence, capped = "info", "medium", False
+        elif _is_doc(path):
             severity, confidence, capped = "info", "medium", False
         elif not real_hits:
             severity, confidence, capped = "low", "medium", False
@@ -481,7 +521,7 @@ def detect_secret_token(snapshot: Snapshot) -> RuleOutcome:
         elif severity == "low":
             impact = "测试/示例目录中的样例令牌，风险较低"
         elif severity == "info":
-            impact = "文档示例中的令牌形态，风险较低"
+            impact = "规则定义或文档中的令牌形态示例，非真实凭据"
         finding = make_finding(
             R11,
             title="仓库内容包含疑似访问令牌",

@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖/可移植性/密钥泄露缺陷。当前完成**第 4 步（v2.0）：规则引擎 R01–R11 + 密钥与敏感信息规则**，尚未实现评分与三卡报告。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库能不能进内网。只读当前快照，不 clone、不执行代码、不扫 Git 历史；14 条规则合成 0–100 分、A/B/C/D 等级、一句话裁决，并输出一页三卡报告。当前完成**第 5 步（v3.0）：评分引擎 + 三卡报告**。
 
 ## 快速开始（Windows）
 
@@ -27,9 +27,9 @@ python3.13 -m venv .venv
 | 入口 | 说明 |
 |---|---|
 | `GET /healthz` | 返回 `{"ok": true}` |
-| `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段；响应含 `findings` |
+| `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段；响应含 `findings`、`checks`、`score` |
 | `GET /api/rules` | 规则注册表：`id / dimension / severity / points / needs_content` |
-| `GET /` | 单页表单，提交后同页展示结果与规则结论 |
+| `GET /` | 单页表单，提交后展示结论 / 证据 / 建议三卡报告 |
 
 成功响应结构（requests 实例，字段名冻结）：
 
@@ -47,24 +47,74 @@ python3.13 -m venv .venv
   "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 121, "content_bytes": 658389, "content_failed": 0, "content_files_available": 120, "path_scan_files": 120, "path_scan_bytes": 658389, "content_total_text_files": 123, "secret_scan_files": 120, "secret_scan_bytes": 658389, "secret_sampling_ratio": 0.9756},
   "timing": {"meta_ms": 749, "commit_ms": 425, "tree_ms": 688, "tree_slow": false, "tree_attempts": 1},
   "files": [{"path": ".coveragerc", "size": 33, "is_text": true}],
-  "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "pyproject.toml", "line": 0, "evidence_masked": "浮动 4 个 / 总计 4 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high", "cap_eligible": false}],
+  "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "pyproject.toml", "line": 0, "evidence_masked": "浮动 4 个 / 总计 4 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high", "cap_eligible": false},
+    {"id": "R09-env-committed", "rule_id": "R09", "category": "secrets", "dimension": "secrets", "severity": "low", "title": ".gitignore 未包含 .env", "file": ".gitignore", "line": 0, "evidence_masked": "未发现 .env 入库，但 .gitignore 中没有 .env / .env.* 规则", "impact": "本地 .env 存在被误提交的风险", "fix": "在 .gitignore 增加 .env 与 .env.*", "hit_count": 1, "confidence": "medium", "cap_eligible": false}],
   "checks": [
     {"rule_id": "R01", "status": "pass", "basis": "根目录 README.md", "file": "README.md", "line": 0},
     {"rule_id": "R02", "status": "pass", "basis": "根目录 README.md 覆盖 2 类说明：A 安装/构建、C 配置/环境", "file": "README.md", "line": 0},
     {"rule_id": "R03", "status": "pass", "basis": "根目录 pyproject.toml（共 3 个候选）", "file": "pyproject.toml", "line": 0},
-    {"rule_id": "R04", "status": "pass", "basis": "根目录 pyproject.toml 浮动 4 个 / 总计 4 个（>50%），无 lockfile；仅提示 1 条，不扣分", "file": "pyproject.toml", "line": 0},
+    {"rule_id": "R04", "status": "pass", "basis": "根目录 pyproject.toml 浮动 4 个 / 总计 4 个（>50%），无 lockfile；仅提示 1 条", "file": "pyproject.toml", "line": 0},
     {"rule_id": "R05", "status": "pass", "basis": "根目录 Makefile", "file": "Makefile", "line": 0},
-    {"rule_id": "R06", "status": "pass", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1；仅提示 1 条，不扣分", "file": "docs/make.bat", "line": 0},
+    {"rule_id": "R06", "status": "pass", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1；仅提示 1 条", "file": "docs/make.bat", "line": 0},
     {"rule_id": "R07", "status": "pass", "basis": "存在跨平台入口：Makefile（Makefile）", "file": "Makefile", "line": 0},
-    {"rule_id": "R08", "status": "pass", "basis": "抽样 120/123（97.56%），命中 2 个文件（high 0 / low 1 / info 1）；仅提示 2 条，不扣分", "file": "src/requests/utils.py", "line": 487},
-    {"rule_id": "R09", "status": "pass", "basis": "未发现 .env 入库，.gitignore 已包含 .env", "file": ".gitignore", "line": 0},
+    {"rule_id": "R08", "status": "pass", "basis": "抽样 120/123（97.56%），命中 2 个文件（high 0 / low 1 / info 1）；仅提示 2 条", "file": "src/requests/utils.py", "line": 487},
+    {"rule_id": "R09", "status": "pass", "basis": "未发现 .env 入库，但 .gitignore 未包含 .env；仅提示 1 条", "file": ".gitignore", "line": 0},
     {"rule_id": "R10", "status": "pass", "basis": "抽样 120/123（97.56%），未命中私钥材料", "file": "", "line": 0},
-    {"rule_id": "R11", "status": "pass", "basis": "抽样 120/123（97.56%），未命中令牌或带账密连接串", "file": "", "line": 0}
-  ]
+    {"rule_id": "R11", "status": "pass", "basis": "抽样 120/123（97.56%），未命中令牌或带账密连接串", "file": "", "line": 0},
+    {"rule_id": "R12", "status": "pass", "basis": "根目录存在许可证文件 LICENSE", "file": "LICENSE", "line": 0},
+    {"rule_id": "R13", "status": "pass", "basis": "最近推送距今约 24 天（≤ 12 个月）", "file": "", "line": 0},
+    {"rule_id": "R14", "status": "pass", "basis": "仓库未归档（archived=false）", "file": "", "line": 0}
+  ],
+  "score": {
+    "total": 95,
+    "raw_total": 95,
+    "grade": "A",
+    "verdict": "可直接接入",
+    "caps": [],
+    "dimensions": [
+      {"key": "secrets", "label": "密钥与敏感信息", "weight": 30, "deduction": 3, "score": 27},
+      {"key": "portability", "label": "平台可移植", "weight": 25, "deduction": 0, "score": 25},
+      {"key": "docs", "label": "文档完备", "weight": 20, "deduction": 0, "score": 20},
+      {"key": "deps", "label": "依赖与入口", "weight": 15, "deduction": 2, "score": 13},
+      {"key": "maintenance", "label": "维护状态", "weight": 10, "deduction": 0, "score": 10}
+    ],
+    "deductions": [
+      {"rule_id": "R04", "points": -2, "reason": "依赖版本大面积浮动", "file": "pyproject.toml"},
+      {"rule_id": "R09", "points": -3, "reason": ".gitignore 未包含 .env", "file": ".gitignore"}
+    ]
+  },
+  "engine_version": "repogate-3.0",
+  "scanned_at": "2026-11-26T17:52:10.047040+00:00"
 }
 ```
 
+`score` 单条结构（冻结）：
+
+```json
+{
+  "total": 79,
+  "raw_total": 90,
+  "grade": "B",
+  "verdict": "小修后接入",
+  "caps": [{"type": "env_committed_placeholder", "limit": 79, "reason": "R09 检测到 .env 入库（.env，值为占位或空），总分上限 79"}],
+  "dimensions": [
+    {"key": "secrets", "label": "密钥与敏感信息", "weight": 30, "deduction": 10, "score": 20},
+    {"key": "portability", "label": "平台可移植", "weight": 25, "deduction": 0, "score": 25},
+    {"key": "docs", "label": "文档完备", "weight": 20, "deduction": 0, "score": 20},
+    {"key": "deps", "label": "依赖与入口", "weight": 15, "deduction": 0, "score": 15},
+    {"key": "maintenance", "label": "维护状态", "weight": 10, "deduction": 0, "score": 10}
+  ],
+  "deductions": [{"rule_id": "R09", "points": -10, "reason": ".env 随代码入库但密钥类值均为空或占位", "file": ".env"}]
+}
+```
+
+- `raw_total` 是封顶前的五维加总；`total = min(raw_total, 最严 cap.limit)`。`caps` 列出所有触发的上限，`total` 取最小。
+- `deductions` 只列真正扣分的 finding（info 不列）；`points` 为负分，页面按维度分组展示。
+- `grade` 与 `verdict` 由封顶后的 `total` 决定，不允许出现「总分 79 却显示 A」。
+- `engine_version` 与 `scanned_at` 为页面页脚透传字段；`scanned_at` 同时是 R13 判断「距今 > 12 个月」的时间基准。
+
 `findings` 单条字段（最终 schema，后续步骤不再改）：
+
 
 ```json
 {
@@ -118,7 +168,7 @@ python3.13 -m venv .venv
   - `listed_blobs + stats.unlisted_blobs == stats.total_blobs_in_tree`
 - `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 与 R06 同源，只统计**纳入分析范围**（排除目录段已剔除）的 `.bat/.cmd/.ps1/.vbs`。全树原始数量另由 `snapshot.raw_windows_scripts` 提供，仅用于 R06 basis 注脚，不进 stats。Windows 脚本数一律按纳入分析范围统计。
 - `stats.path_scan_files` / `stats.path_scan_bytes` 为实际读取到的文本文件数与字节；`stats.content_total_text_files` 为可读文本文件总数（= `files_scanned`）。
-- `stats.secret_scan_files` / `stats.secret_scan_bytes` 为密钥规则实际扫描的文件数与字节；`stats.secret_sampling_ratio = secret_scan_files / content_total_text_files`（保留 4 位小数），用于判定封顶资格，不得隐藏。
+- `stats.secret_scan_files` / `stats.secret_scan_bytes` 为密钥规则实际扫描的文件数与字节；`stats.secret_sampling_ratio = secret_scan_files / content_total_text_files`（保留 4 位小数），用于判定封顶资格与 R08/R10/R11 的抽样折半，不得隐藏。
 - `files` 只返回 `files_scanned` 集合中按路径排序的前 50 条。
 - 排除目录段（任意一段命中即整条跳过）：`.git` / `node_modules` / `vendor` / `dist` / `build` / `.venv` / `venv` / `__pycache__` / `.pytest_cache` / `.idea` / `.vs` / `obj`。
 - 网络重试：meta 与 tree 遇 5xx / `RemoteProtocolError` 重试 2 次（退避 1s → 3s），tree 实际尝试次数记 `timing.tree_attempts`；三次都失败才报 `FETCH_FAILED`，404/403/429 与超时不重试。
@@ -138,9 +188,12 @@ python3.13 -m venv .venv
 | R06 | windows-scripts | portability | high | -6 | 否 | 统计纳入分析范围的 `.bat/.cmd/.ps1/.vbs`（与 `stats.windows_script_count` 同源）；0 个 pass，1 个 info（扣 0，保留 finding），2–4 个 medium（-3），≥5 个 high（-6）；share = win/(win+.sh+.bash) < 0.5 时最高只判 medium；basis 可带注脚「全树 N，其中 M 个未纳入（排除目录 A 个、BLOB_CAP 未列出 B 个）」 |
 | R07 | no-crossplatform | portability | medium | -4 | 否 | 无 Windows 脚本 → n/a；有 Windows 脚本且存在 `.sh/.bash/Makefile/Dockerfile/docker-compose*.yml` → pass；全无 → fail（-4） |
 | R08 | hardcoded-path | portability | high | -10 | 是 | 扫 `path_scan_files` 文本，识别盘符 / UNC / `/Users|home/<user>` / `/mnt/<x>`；占位符、示例用户名、CI runner、占位路径段、文档降级 low，`tests/test/fixtures/examples/docs/samples` 目录降级 info；同文件合并，high 每文件 -2，单规则封顶 -10；basis 必含「抽样 X/Y（Z%）」，Z<20% 时 fail 记 medium confidence 并声明「仅基于抽样文件，非全仓结论」，零命中记 degraded |
-| R09 | env-committed | secrets | critical | -10 | 是 | tree 命中 `.env` / `.env.*`（排除 `.env.example/.sample/.template/.dist`，大小写不敏感）；读前 4KB：密钥类 KEY（含 secret/token/password/api_key/credential/auth/key）有非占位值 → critical（封顶 69），密钥类值全空/占位 → medium（-10，不封顶）；不存在但 `.gitignore` 未包含 `.env` → low（提示，不扣分）；`tests/testdata` 等目录中的 `.env` 视为夹具降级 low；evidence 只显示 `KEY=***` |
+| R09 | env-committed | secrets | critical | -10 | 是 | tree 命中 `.env` / `.env.*`（排除 `.env.example/.sample/.template/.dist`，大小写不敏感）；读前 4KB：密钥类 KEY 有非占位值 → critical（封顶 69），密钥类值全空/占位 → medium（-10，封顶 79）；不存在但 `.gitignore` 未包含 `.env` → low（提示）；`tests/testdata` 等目录中的 `.env` 视为夹具降级 low；evidence 只显示 `KEY=***`。密钥类 KEY 冻结表：`secret\|token\|password\|passwd\|pwd\|api[_-]?key\|access[_-]?key\|credential\|auth\|private`，按词边界匹配（`AUTHOR` 不算 `auth`） |
 | R10 | private-key | secrets | critical | -15 | 是 | 内容命中 `-----BEGIN … PRIVATE KEY-----` → critical（封顶 59）；tree 命中 `.pem/.key/.p12/.pfx/.jks/id_rsa*` 但内容不可读 → high（-15）；`tests/test/fixtures/examples/docs` 及测试文件降级 low |
-| R11 | secret-token | secrets | critical | -15 | 是 | 内容命中 OpenAI/Anthropic/AWS/阿里云/GitHub/Slack/Google 令牌、JWT、Bearer、带账密数据库 URL；占位值、重复字符 → low，文档 → info，测试/示例目录 → low；其余按封顶资格判 critical（封顶 59）或 high（-15，不封顶） |
+| R11 | secret-token | secrets | critical | -15 | 是 | 内容命中 OpenAI/Anthropic/AWS/阿里云/GitHub/Slack/Google 令牌、JWT、Bearer、带账密数据库 URL；占位值、重复字符 → low，文档 → info，测试/示例目录 → low；命中行属于规则/模式定义（路径含 `rules/` `patterns/`、文件名为 `gitleaks.toml` 或 `*rule*`，或同时含 `[ ] { } ( ) \| \ * + ?` 与 `regex/pattern/re.compile` 等关键字）→ info，不封顶；其余按封顶资格判 critical（封顶 59）或 high（-15，不封顶） |
+| R12 | license-missing | maintenance | low | -4 | 否 | 根目录无 `LICENSE` / `LICENCE` / `COPYING`（允许 `.md/.txt` 后缀）→ low 提示；有则 pass |
+| R13 | stale-repo | maintenance | low | -3 | 否 | `pushed_at` 距 `scanned_at` > 365 天 → low 提示；≤365 天 pass；`pushed_at` 缺失/不可解析 → degraded |
+| R14 | archived | maintenance | low | -3 | 否 | `archived=true` → low 提示；`false` → pass |
 
 - 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
 - 事实型规则（缺文件）`file=""`、`line=0`，evidence 固定写「未找到 X（已检查最高层级：根目录与一层普通子目录）」。
@@ -168,10 +221,10 @@ python3.13 -m venv .venv
 
 | status | 含义 | 与 findings 的关系 |
 | --- | --- | --- |
-| `pass` | 通过；允许 low / info 提示 | 不得有 medium 及以上 finding；low/info finding 保留，basis 追加「仅提示 N 条，不扣分」 |
+| `pass` | 通过；允许 low / info 提示 | 不得有 medium 及以上 finding；low/info finding 保留，basis 追加「仅提示 N 条」；提示项的计分由 `score.deductions` 给出 |
 | `fail` | 未通过 | 必须至少有一条 medium / high / critical finding |
 | `degraded` | 降级：依据文件读取失败或只在弱目录命中，结论不完整（页面黄色） | 部分依据可用时输出 info finding；全部依据失败时只在 checks 记 degraded，不出 finding |
-| `n/a` | 不适用（页面灰色） | 不允许有对应 finding；第 5 步评分不计入分母 |
+| `n/a` | 不适用（页面灰色） | 不允许有对应 finding；该维度仍按固定权重计满分，不因规则不适用而放大其它维度 |
 
 - `basis` 必须可复核，写具体文件名或路径与层级：
   - `根目录 PowerToys.slnx（Windows 专用构建入口，Linux/容器环境需替代方案）`
@@ -179,15 +232,98 @@ python3.13 -m venv .venv
   - `无可解析清单，规则不适用`
 - R05 的 `package.json` 命中集合在 v1.8 收窄为 `start/dev/serve/build/compile`（不再认 `watch/test/lint`）；basis 分叉：`scripts.start` 等写「启动入口」，`scripts.build/compile` 写「构建入口，无启动命令」。
 - R05 命中 Windows 专用入口（`.sln` / `.slnx` / `.csproj` / `build.ps1` / `build.bat`）时，basis 标注「Linux/容器环境需替代方案」；同一文案常量 `WINDOWS_ONLY_IMPACT` 供 R06/R07 复用。
-- 一致性断言（代码内 assert，单测覆盖）：checks 条数 == 规则数（11）、`rule_id` 不重复、`fail` ⇔ 存在 medium+ finding、`pass` 不得有 medium+ finding、`n/a` 不得有 finding、`basis` 非空。
+- 一致性断言（代码内 assert，单测覆盖）：checks 条数 == 规则数（14）、`rule_id` 不重复、`fail` ⇔ 存在 medium+ finding、`pass` 不得有 medium+ finding、`n/a` 不得有 finding、`basis` 非空。
 
 ### 密钥与敏感信息（第 4 步）
 
-- R09 / R10 / R11 的每条 finding 带 `cap_eligible`：`secret_sampling_ratio ≥ 0.5` 或命中高风险路径（`.env*`、`*.pem/*.key/*.p12/*.pfx`、`id_rsa*`、`*credential*`、`*secret*`、根目录配置文件）时为 `true`，第 5 步据此封顶（R09 69 分，R10 / R11 59 分）。
-- 不满足封顶资格时仍然出 finding，但 `severity=high`、`-15`、`cap_eligible=false`，impact 固定写「抽样范围内发现，未构成全仓结论」。
+- R09 / R10 / R11 的每条 finding 带 `cap_eligible`：`secret_sampling_ratio ≥ 0.5` 或命中高风险路径（`.env*`、`*.pem/*.key/*.p12/*.pfx`、`id_rsa*`、`*credential*`、`*secret*`、根目录配置文件）时为 `true`；第 5 步据此封顶（R09 critical 69 / medium 79，R10 / R11 59）。
+- 抽样率 <20% 时，R08 / R10 / R11 的 finding 一律 `cap_eligible=false`，扣分减半；不允许用低抽样触发封顶。
+- 不满足封顶资格时仍然出 finding，但 `severity=high`、`cap_eligible=false`，impact 固定写「抽样范围内发现，未构成全仓结论」。
 - 掩码：`app/masking.py::mask_secret` 统一为「前 4 + *** + 后 2」，长度 <8 全 `***`。R09 evidence 只显示 `KEY=***`；完整密钥不得出现在响应 JSON、页面、日志或 golden 文件。
 - 占位判定（R11）：值含 `xxx / your / example / sample / demo / test / dummy / fake / placeholder / changeme / changethis / redacted / < / ${ / {{ / %s`，或去掉前缀后由同一字符重复构成 → low，不封顶。
 - 内容预取把 `.env*`、`.gitignore`、`.pem/.key/id_rsa*`、`*credential*/*secret*` 前移到普通抽样之前，保证 R09/R10 尽量拿到原文。
+
+## 评分模型（第 5 步，v3.0）
+
+评分口径是产品主张，公开接受质疑；代码在 `app/scoring.py`，所有数字只在这里定义一次。
+
+### 维度与权重
+
+| key | 维度 | 权重 |
+| --- | --- | --- |
+| `secrets` | 密钥与敏感信息 | 30 |
+| `portability` | 平台可移植 | 25 |
+| `docs` | 文档完备 | 20 |
+| `deps` | 依赖与入口 | 15 |
+| `maintenance` | 维护状态 | 10 |
+
+`维度分 = max(0, 权重 − 该维度所有 finding 的扣分合计)`；`raw_total = 五维相加`（满分 100）。
+
+### 扣分映射
+
+R01–R08 保留第 2/3 步已冻结的规则扣分，避免第 5 步把既有结论重新定价：
+
+| 规则 | 扣分口径 |
+| --- | --- |
+| R01 | 每条 finding -10 |
+| R02 | 每条 finding -4 |
+| R03 | 每条 finding -8 |
+| R04 | 每条 finding -2 |
+| R05 | 每条 finding -4 |
+| R06 | 每条 finding -6 |
+| R07 | 每条 finding -4 |
+| R08 | 每个 high 文件 -2（与 R08 原「单规则封顶 -10」一致；low/info 0） |
+
+R09–R14 由 severity 决定，不由规则各自随意定：
+
+| severity | 扣分 |
+| --- | --- |
+| `critical` | -30 |
+| `high` | -15 |
+| `medium` | -10 |
+| `low` | -3 |
+| `info` | 0 |
+
+例外：R09 / R10 / R11 命中测试/样例目录（`tests/` `test/` `fixtures/` `examples/` `docs/` `samples/` `testdata/` 等）且 severity 为 `low` 时按 0 分处理，只提示、不扣分——这些通常是假密钥夹具。
+
+### 抽样折半
+
+- R08 / R10 / R11 的扣分，在 `stats.secret_sampling_ratio < 20%` 时减半（向下取整到整数，最少 1 分）。
+- 同一条件下这些规则的 finding 一律 `cap_eligible=false`，不允许用低抽样触发封顶。
+- R09 不受折半影响：`.env` 的判定只看文件是否存在与前 4KB 内容，不依赖大范围抽样。
+
+### 封顶（按顺序取最严）
+
+| 触发条件 | 上限 | 等级 |
+| --- | --- | --- |
+| R10 / R11 存在 `critical` 且 `cap_eligible=true` | 59 | D |
+| R09 存在 `critical`（真实值入库） | 69 | C |
+| R09 存在 `medium`（占位值入库 / `.env` 被提交） | 79 | B |
+| `docs + deps` 维度扣分合计 ≥ 12 | 59 | D |
+| `docs + deps` 维度扣分合计 8–11 | 69 | C |
+
+- **R07 不设门槛**：委托方本来就跑 Windows，缺少跨平台入口是迁移成本，不是阻断项。这条是明确的产品判断，不是遗漏。
+- 多个 cap 同时触发时，`caps` 全部列出，`total` 取最小上限。
+- `total = min(raw_total, 最严 cap.limit)`；`grade` 与 `verdict` 只看封顶后的 `total`。
+
+### 等级与裁决
+
+| 总分 | 等级 | 裁决 |
+| --- | --- | --- |
+| ≥ 85 | A | 可直接接入 |
+| 70–84 | B | 小修后接入 |
+| 60–69 | C | 需整改 |
+| < 60 | D | 不建议接入 |
+
+### 报告页（一页三卡）
+
+- 卡 1 结论：纯 CSS `conic-gradient` 分数环（无图表库）、等级、裁决、阻断项数（critical finding 数）、高危数（high finding 数）、内容抽样率；触发封顶时逐条列出上限与原因。
+- 卡 2 证据：五维横向条（得分/权重，点开可见该维度每一笔 `deductions`）、14 条检查矩阵（通过 / 提示 / 未通过 / 不适用 四色，悬停显示 basis）、风险表（critical → info 排序，含 rule_id、文件:行号、掩码证据、影响、修复建议；medium 以下默认折叠）。
+- 卡 3 建议：本步只放占位「AI 建议将在后续接入」，不伪造 AI 结论。
+- 页脚：commit SHA、扫描时间、引擎版本、文件数、内容抽样率、封顶原因、导出 JSON 按钮。导出内容来自同一 `InspectResponse`，与 `POST /api/inspect` 完全一致。
+- 375px 不横向溢出：三卡单列、风险表转为纵向卡片、矩阵单列；桌面为双列矩阵与标准表格。
+
+
 
 
 
@@ -212,10 +348,13 @@ python3.13 -m venv .venv
 - 密钥规则受抽样率约束：抽样 <50% 且命中文件不在高风险路径时只作 high 提示，不封顶，不能据此断言全仓无泄露。
 - R09 只解析 `.env` 前 4KB 的 `KEY=VALUE`；多行值、注释中的值不参与判定。
 - 占位词表是启发式，宁可漏报也不误报：真实值若恰好含 `test` / `example` 等词会被降级为 low。
+- 测试/样例目录（`tests/` `test/` `fixtures/` `examples/` `docs/` `samples/` `testdata/` 等）里的敏感命中只提示、不扣分（按 low / info 计），避免把假密钥夹具当成事故。
+- R11 的「规则定义降级」不是只看 `[ ] { } ( ) | \ * + ?`：普通配置字典（如 `{"Authorization": "Bearer …"}`）也含 `{}`，若无条件降级会把真实配置误判成规则样例。实现收紧为「规则路径，或同时含元字符与 `regex/pattern/re.compile` 等关键字」；这是对字面口径的主动收窄，需审定。
+- R12/R13/R14 只读仓库元信息与根目录文件名；`pushed_at` 缺失时 R13 记 degraded，不猜测仓库是否停更。
 
 ## 当前明确不做
 
-评分、等级、三卡报告、golden 快照、内容全量下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅外不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
+AI 建议卡（第 7 步）、golden 快照固化 diff（第 6 步）、内容全量下载、缓存、数据库、登录、历史与组织看板、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅与第 5 步指定的页脚字段外不展示其它 `stats/timing`，验收以 `/api/inspect` JSON 为准。
 
 ## 测试
 

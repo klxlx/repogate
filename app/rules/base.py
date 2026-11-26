@@ -102,7 +102,8 @@ def conclusion(
 ) -> RuleOutcome:
     """v2.0 状态语义：按最高 severity 判定，medium 及以上才 fail。
 
-    只有 low / info 时判 pass，但 finding 保留，basis 明确「仅提示 N 条，不扣分」。
+    只有 low / info 时判 pass，但 finding 保留，basis 明确「仅提示 N 条」；
+    这些提示是否计分由第 5 步 score.deductions 统一给出，不在规则层承诺「不扣分」。
     """
     if not findings:
         return passed(rule, basis)
@@ -121,7 +122,7 @@ def conclusion(
         )
     return RuleOutcome(
         status="pass",
-        basis=f"{basis}；仅提示 {len(ordered)} 条，不扣分",
+        basis=f"{basis}；仅提示 {len(ordered)} 条",
         finding=None,
         file=top.file,
         line=top.line,

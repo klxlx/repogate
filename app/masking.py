@@ -15,7 +15,7 @@ _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._-]{8,}"), r"\1***"),
     (
         re.compile(
-            r"(?i)((?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*)[^\s,;'\"]+"
+            r"(?i)((?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*)[^\s,;'\"、）]+"
         ),
         r"\1***",
     ),

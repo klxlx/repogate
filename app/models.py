@@ -106,6 +106,37 @@ class TimingInfo(BaseModel):
     tree_attempts: int = 1
 
 
+class CapInfo(BaseModel):
+    type: str
+    limit: int
+    reason: str
+
+
+class DimensionInfo(BaseModel):
+    key: str
+    label: str
+    weight: int
+    deduction: int
+    score: int
+
+
+class DeductionInfo(BaseModel):
+    rule_id: str
+    points: int
+    reason: str
+    file: str = ""
+
+
+class ScoreInfo(BaseModel):
+    total: int = 0
+    raw_total: int = 0
+    grade: Literal["A", "B", "C", "D"] = "D"
+    verdict: str = "不建议接入"
+    caps: list[CapInfo] = Field(default_factory=list)
+    dimensions: list[DimensionInfo] = Field(default_factory=list)
+    deductions: list[DeductionInfo] = Field(default_factory=list)
+
+
 class InspectResponse(BaseModel):
     ok: bool = True
     provider: str = "github"
@@ -121,6 +152,9 @@ class InspectResponse(BaseModel):
     files: list[FileEntry]
     findings: list[Finding] = Field(default_factory=list)
     checks: list[Check] = Field(default_factory=list)
+    score: ScoreInfo = Field(default_factory=ScoreInfo)
+    engine_version: str = "repogate-3.0"
+    scanned_at: str = ""
 
 
 class ErrorBody(BaseModel):

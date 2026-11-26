@@ -193,6 +193,42 @@ def test_r11_placeholder_token_is_low() -> None:
     assert outcome.extra_findings[0].severity == "low"
 
 
+def test_r09_keyword_table_boundary_and_api_key() -> None:
+    text = "AUTHOR=real-person\nAPI_KEY=sk-real-looking-32chars\nPRIVATE_STUFF=abc\n"
+    outcome = detect_env_committed(snapshot({".env": 80}, {".env": text}))
+
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert outcome.finding.severity == "critical"
+    assert "API_KEY=***" in outcome.finding.evidence_masked
+    assert "PRIVATE_STUFF=***" in outcome.finding.evidence_masked
+    assert "AUTHOR" not in outcome.finding.evidence_masked
+
+
+def test_r11_rule_definition_paths_are_info() -> None:
+    token = "sk-abcdefghijklmnopqrst"
+    contents = {
+        "cmd/generate/config/rules/anthropic.go": f'{{"key": "{token}"}}',
+        "config/gitleaks.toml": f'regex = "{token}"',
+    }
+    outcome = detect_secret_token(snapshot({path: 50 for path in contents}, contents))
+
+    findings = _findings(outcome)
+    assert outcome.status == "pass"
+    assert {item.severity for item in findings} == {"info"}
+
+
+def test_r10_private_key_at_low_sampling_is_high_not_capped() -> None:
+    text = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"
+    outcome = detect_private_key(snapshot({"id_rsa": 80}, {"id_rsa": text}, text_total=100))
+
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert outcome.finding.severity == "high"
+    assert outcome.finding.cap_eligible is False
+    assert "未构成全仓结论" in outcome.finding.impact
+
+
 def test_mask_secret_format() -> None:
     assert mask_secret("sk-abcdefghij") == "sk-a***ij"
     assert mask_secret("short") == "***"

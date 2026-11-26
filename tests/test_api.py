@@ -159,8 +159,10 @@ def test_api_rules_registry() -> None:
     assert response.status_code == 200
     rules = response.json()["rules"]
     assert [rule["id"] for rule in rules] == [
-        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08",
+        "R09", "R10", "R11", "R12", "R13", "R14",
     ]
+    assert len(rules) == 14
     for rule in rules:
         assert set(rule) == {"id", "dimension", "severity", "points", "needs_content"}
     assert rules[0]["points"] == -10
@@ -176,7 +178,7 @@ def test_api_findings_carry_required_fields(monkeypatch) -> None:
 
     body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
 
-    assert len(body["findings"]) == 3
+    assert len(body["findings"]) == 5
     for finding in body["findings"]:
         assert finding["rule_id"]
         assert finding["evidence_masked"]
@@ -196,9 +198,10 @@ def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
 
     checks = body["checks"]
     assert [check["rule_id"] for check in checks] == [
-        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08",
+        "R09", "R10", "R11", "R12", "R13", "R14",
     ]
-    assert len(checks) == 11
+    assert len(checks) == 14
     for check in checks:
         assert check["status"] in {"pass", "fail", "degraded", "n/a"}
         assert check["basis"].strip()
@@ -216,6 +219,33 @@ def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
             assert all(item["severity"] in ("low", "info") for item in items)
         elif check["status"] == "n/a":
             assert not items
+
+
+def test_page_embedded_json_matches_api(monkeypatch) -> None:
+    import json
+    import re
+
+    async def fake_fetch(_: str) -> RepoBundle:
+        return fake_bundle()
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    page = client.post("/", data={"repo_url": "https://github.com/a/b"})
+    match = re.search(
+        r'<script type="application/json" id="result-json">(.*?)</script>',
+        page.text,
+        re.S,
+    )
+    assert match is not None
+    page_data = json.loads(match.group(1))
+
+    api_data = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
+
+    assert set(page_data) == set(api_data)
+    for key in page_data:
+        if key == "scanned_at":
+            continue
+        assert page_data[key] == api_data[key], key
 
 
 def test_api_stats_windows_script_count_matches_r06_basis(monkeypatch) -> None:
@@ -321,7 +351,9 @@ def test_page_submit_renders_result(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "octocat/Hello-World" in response.text
-    assert "src/main.py" in response.text
+    assert 'class="score-ring"' in response.text
+    assert "不建议接入" in response.text
+    assert "导出 JSON" in response.text
 
 
 def test_page_submit_renders_chinese_error(monkeypatch) -> None:

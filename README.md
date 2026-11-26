@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖缺陷。当前完成**第 2 步（封板 v1.7）：规则引擎 + R01–R05 + 证据层级 + checks 四态**，尚未实现评分、三卡报告、平台与密钥规则。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖/可移植性缺陷。当前完成**第 3 步（v1.8）：规则引擎 R01–R08 + 平台可移植规则**，尚未实现评分、三卡报告、密钥规则。
 
 ## 快速开始（Windows）
 
@@ -44,8 +44,8 @@ python3.13 -m venv .venv
   "ref": "main",
   "commit_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
   "scope": {"files_scanned": 123, "files_skipped": 7, "bytes_scanned": 664038, "truncated": false, "truncate_reason": "none"},
-  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 2, "content_bytes": 6310, "content_failed": 0, "content_files_available": 2},
-  "timing": {"meta_ms": 1662, "commit_ms": 565, "tree_ms": 529, "tree_slow": false},
+  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 121, "content_bytes": 658389, "content_failed": 0, "content_files_available": 120, "path_scan_files": 120, "path_scan_bytes": 658389, "content_total_text_files": 123},
+  "timing": {"meta_ms": 749, "commit_ms": 425, "tree_ms": 688, "tree_slow": false, "tree_attempts": 1},
   "files": [{"path": ".coveragerc", "size": 33, "is_text": true}],
   "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "pyproject.toml", "line": 0, "evidence_masked": "浮动 4 个 / 总计 4 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high"}],
   "checks": [
@@ -53,7 +53,10 @@ python3.13 -m venv .venv
     {"rule_id": "R02", "status": "pass", "basis": "根目录 README.md 覆盖 2 类说明：A 安装/构建、C 配置/环境", "file": "README.md", "line": 0},
     {"rule_id": "R03", "status": "pass", "basis": "根目录 pyproject.toml（共 3 个候选）", "file": "pyproject.toml", "line": 0},
     {"rule_id": "R04", "status": "fail", "basis": "根目录 pyproject.toml 浮动 4 个 / 总计 4 个（>50%），无 lockfile", "file": "pyproject.toml", "line": 0},
-    {"rule_id": "R05", "status": "pass", "basis": "根目录 Makefile", "file": "Makefile", "line": 0}
+    {"rule_id": "R05", "status": "pass", "basis": "根目录 Makefile", "file": "Makefile", "line": 0},
+    {"rule_id": "R06", "status": "fail", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1", "file": "docs/make.bat", "line": 0},
+    {"rule_id": "R07", "status": "pass", "basis": "存在跨平台入口：Makefile（Makefile）", "file": "Makefile", "line": 0},
+    {"rule_id": "R08", "status": "fail", "basis": "扫描 120/123 个文本文件，命中 2 个文件（high 2 / low 0 / info 0）", "file": "src/requests/utils.py", "line": 487}
   ]
 }
 ```
@@ -110,8 +113,10 @@ python3.13 -m venv .venv
   - `files_scanned + files_skipped == listed_blobs`
   - `listed_blobs + stats.unlisted_blobs == stats.total_blobs_in_tree`
 - `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 是全仓库 blob 中 `.bat/.cmd/.ps1/.vbs` 的实际数量，不受清单限额影响。
+- `stats.path_scan_files` / `stats.path_scan_bytes` 为实际读取到的文本文件数与字节；`stats.content_total_text_files` 为可读文本文件总数（= `files_scanned`）。
 - `files` 只返回 `files_scanned` 集合中按路径排序的前 50 条。
 - 排除目录段（任意一段命中即整条跳过）：`.git` / `node_modules` / `vendor` / `dist` / `build` / `.venv` / `venv` / `__pycache__` / `.pytest_cache` / `.idea` / `.vs` / `obj`。
+- 网络重试：meta 与 tree 遇 5xx / `RemoteProtocolError` 重试 2 次（退避 1s → 3s），tree 实际尝试次数记 `timing.tree_attempts`；三次都失败才报 `FETCH_FAILED`，404/403/429 与超时不重试。
 - 耗时策略：`tree_ms > 45000` 时 `timing.tree_slow=true` 并打印 WARNING，页面顶部横幅提示「超大仓库，本次耗时较长」；`tree_ms > 90000` 才返回 `TIMEOUT`。不再在 60 秒处截杀。
 
 ## 规则引擎（第 2 步）
@@ -124,7 +129,10 @@ python3.13 -m venv .venv
 | R02 | readme-incomplete | docs | medium | -4 | 是 | R01 未命中时，README 前 20KB 覆盖 <2 类：A 安装构建 / B 运行使用 / C 配置环境 / D 依赖前置 |
 | R03 | deps-missing | deps | high | -8 | 否 | 最高可用层级无任何依赖清单（含 `.sln/.slnx` / `.csproj` / `vcpkg.json` / `CMakeLists.txt`） |
 | R04 | deps-unpinned | deps | low | -2 | 是 | 无可解析清单（`package.json` / `requirements.txt` / `pyproject.toml`）时 `n/a`；有清单时无 lockfile 且浮动版本 >50% 判 fail |
-| R05 | start-missing | deps | medium | -4 | 是 | 最高可用层级无 `package.json:scripts.start/dev/serve/compile/build/watch`、`Makefile`、`Dockerfile`、`docker-compose*`、`*.sln/.slnx`；根无 `CMakeLists.txt` / `build.ps1` / `build.bat` / `build.sh` / `*.csproj` |
+| R05 | start-missing | deps | medium | -4 | 是 | 最高可用层级无 `package.json:scripts.start/dev/serve/build/compile`、`Makefile`、`Dockerfile`、`docker-compose*`、`*.sln/.slnx`；根无 `CMakeLists.txt` / `build.ps1` / `build.bat` / `build.sh` / `*.csproj` |
+| R06 | windows-scripts | portability | high | -6 | 否 | 统计 `.bat/.cmd/.ps1/.vbs`；0 个 pass，1 个 info（扣 0，保留 finding），2–4 个 medium（-3），≥5 个 high（-6）；share = win/(win+.sh+.bash) < 0.5 时最高只判 medium |
+| R07 | no-crossplatform | portability | medium | -4 | 否 | 无 Windows 脚本 → n/a；有 Windows 脚本且存在 `.sh/.bash/Makefile/Dockerfile/docker-compose*.yml` → pass；全无 → fail（-4） |
+| R08 | hardcoded-path | portability | high | -10 | 是 | 扫 `path_scan_files` 文本，识别盘符 / UNC / `/Users|home/<user>` / `/mnt/<x>`；占位符、示例用户名、CI runner、文档示例降级 low/info；同文件合并，high 每文件 -2，单规则封顶 -10 |
 
 - 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
 - 事实型规则（缺文件）`file=""`、`line=0`，evidence 固定写「未找到 X（已检查最高层级：根目录与一层普通子目录）」。
@@ -161,8 +169,9 @@ python3.13 -m venv .venv
   - `根目录 PowerToys.slnx（Windows 专用构建入口，Linux/容器环境需替代方案）`
   - `根目录 pyproject.toml 读取失败，仅按 requirements.txt 判断，结论不完整`
   - `无可解析清单，规则不适用`
-- R05 命中 Windows 专用入口（`.sln` / `.slnx` / `.csproj` / `build.ps1` / `build.bat`）时，basis 标注「Linux/容器环境需替代方案」；同一文案常量 `WINDOWS_ONLY_IMPACT` 留给第 3 步 R06/R07。
-- 一致性断言（代码内 assert，单测覆盖）：checks 条数 == 规则数（5）、`rule_id` 不重复、`fail` ⊆ findings、`pass` / `n/a` ∩ findings == 空、`basis` 非空。
+- R05 的 `package.json` 命中集合在 v1.8 收窄为 `start/dev/serve/build/compile`（不再认 `watch/test/lint`）；basis 分叉：`scripts.start` 等写「启动入口」，`scripts.build/compile` 写「构建入口，无启动命令」。
+- R05 命中 Windows 专用入口（`.sln` / `.slnx` / `.csproj` / `build.ps1` / `build.bat`）时，basis 标注「Linux/容器环境需替代方案」；同一文案常量 `WINDOWS_ONLY_IMPACT` 供 R06/R07 复用。
+- 一致性断言（代码内 assert，单测覆盖）：checks 条数 == 规则数（8）、`rule_id` 不重复、`fail` ⊆ findings、`pass` / `n/a` ∩ findings == 空、`basis` 非空。
 
 ## 配额与 token
 
@@ -174,9 +183,15 @@ python3.13 -m venv .venv
 ## 内容读取层
 
 - 只读 `https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}`，不调用 contents API。
-- 配额：≤12 个文件、≤3MB 总量、并发 4、单文件超时 15s、单文件 ≤512KB；超时与 5xx 各重试 1 次，404 不重试。预取顺序按证据层级：README 取最高层，清单取最高层同层全部，弱目录不取，预算先给根目录文件。本步只读 README 与 `package.json` / `requirements.txt` / `pyproject.toml`。
+- 配额：≤120 个文件、≤8MB 总量、并发 6、单文件超时 15s、单文件 ≤512KB；超时与 5xx 各重试 1 次，404 不重试。预取顺序按证据层级：README 取最高层，清单取最高层同层全部，弱目录不取，预算先给根目录文件；其余文本按 P1–P5（配置 → 脚本 → 说明/清单 → 源码 → 其他）排序补齐。
+- 抽样比例：`stats.path_scan_files / stats.content_total_text_files`，报告与页面不得隐藏；`path_scan_bytes` 为实际读取字节。
 - 请求失败、超时、超配额：该文件标为不可用；依赖内容的规则**不得输出肯定结论**，一律 `degraded` + `confidence=low`，说明「缺 X 文件内容，结论不完整」。
 - `stats.content_requests` / `stats.content_bytes` / `stats.content_failed` / `stats.content_files_available` 单独统计 raw 拉取；`request_count` 仍只算 api.github.com。
+
+## 已知限制
+
+- 429 文案（含 `X-RateLimit-Reset` 恢复时间）目前只用 mock 上游与单测验证，未真实耗尽匿名配额复现。
+- 匿名配额 60 次/时、每仓库 3 次 API 请求，约 20 个仓库/时；建议本地设置 `GITHUB_TOKEN` 提升到 5000 次/时。
 
 ## 当前明确不做
 

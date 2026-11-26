@@ -7,22 +7,25 @@ from dataclasses import dataclass, field
 from ..masking import mask_evidence
 from ..models import Check, Finding
 from ..snapshot import Snapshot
+from ..treescan import is_text_file, sample_priority
 from .base import Rule
 from .deps import R03, R04, R05, is_parseable_manifest
 from .docs import R01, R02, is_readme
 from .evidence import level_of, select
+from .portability import R06, R07, R08
 
-RULES: tuple[Rule, ...] = (R01, R02, R03, R04, R05)
+RULES: tuple[Rule, ...] = (R01, R02, R03, R04, R05, R06, R07, R08)
 
 
 @dataclass
 class Evaluation:
     findings: list[Finding] = field(default_factory=list)
     checks: list[Check] = field(default_factory=list)
+    penalties: dict[str, int] = field(default_factory=dict)
 
 
 def plan_content_paths(snapshot: Snapshot) -> list[tuple[str, int]]:
-    """按证据层级排预取顺序：根目录优先，弱目录不取，避免浪费 12 个配额。"""
+    """预取顺序：README + 根层清单在最前，其余文本按 P1–P5 抽样优先级排。"""
     candidates: list[tuple[int, str, int]] = []
 
     readme = select(snapshot.blobs, is_readme)
@@ -38,13 +41,25 @@ def plan_content_paths(snapshot: Snapshot) -> list[tuple[str, int]]:
 
     candidates.sort(key=lambda item: (item[0], item[1]))
     seen: set[str] = set()
-    unique: list[tuple[str, int]] = []
+    ordered: list[tuple[str, int]] = []
     for _, path, size in candidates:
         if path in seen:
             continue
         seen.add(path)
-        unique.append((path, size))
-    return unique
+        ordered.append((path, size))
+
+    pool = [
+        (sample_priority(blob.path), blob.path, blob.size)
+        for blob in snapshot.blobs
+        if is_text_file(blob.path, blob.size)
+    ]
+    pool.sort(key=lambda item: (item[0], item[1]))
+    for _, path, size in pool:
+        if path in seen:
+            continue
+        seen.add(path)
+        ordered.append((path, size))
+    return ordered
 
 
 def merge_findings(findings: list[Finding]) -> list[Finding]:
@@ -77,6 +92,7 @@ def _assert_consistency(checks: list[Check], findings: list[Finding]) -> None:
 def evaluate(snapshot: Snapshot) -> Evaluation:
     findings: list[Finding] = []
     checks: list[Check] = []
+    penalties: dict[str, int] = {}
     for rule in RULES:
         outcome = rule.detect(snapshot)
         checks.append(
@@ -90,7 +106,11 @@ def evaluate(snapshot: Snapshot) -> Evaluation:
         )
         if outcome.finding is not None:
             findings.append(outcome.finding)
+        if outcome.extra_findings:
+            findings.extend(outcome.extra_findings)
+        if outcome.penalty:
+            penalties[rule.id] = outcome.penalty
 
     merged = merge_findings(findings)
     _assert_consistency(checks, merged)
-    return Evaluation(findings=merged, checks=checks)
+    return Evaluation(findings=merged, checks=checks, penalties=penalties)

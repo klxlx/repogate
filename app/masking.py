@@ -24,10 +24,16 @@ _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-def mask_evidence(text: str, limit: int = MAX_EVIDENCE_CHARS) -> str:
-    """脱敏 + 压平空白 + 截断；evidence 必须可安全落库与展示。"""
+def mask_evidence(text: str, limit: int = MAX_EVIDENCE_CHARS, *, keep_paths: bool = False) -> str:
+    """脱敏 + 压平空白 + 截断；evidence 必须可安全落库与展示。
+
+    keep_paths=True 时保留仓库内的路径形态（R08 需要展示硬编码路径本身），
+    凭据类规则仍然全部生效。
+    """
     result = (text or "").strip()
     for pattern, replacement in _RULES:
+        if keep_paths and replacement == "<local-path>":
+            continue
         result = pattern.sub(replacement, result)
     result = re.sub(r"\s+", " ", result)
     if len(result) > limit:

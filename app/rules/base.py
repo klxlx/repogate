@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Literal
 
 from ..masking import mask_evidence
@@ -21,6 +21,8 @@ class RuleOutcome:
     finding: Finding | None = None
     file: str = ""
     line: int = 0
+    penalty: int = 0
+    extra_findings: list[Finding] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,8 @@ def make_finding(
     line: int = 0,
     severity: str | None = None,
     confidence: str = "high",
+    keep_paths: bool = False,
+    hit_count: int = 1,
 ) -> Finding:
     return Finding(
         id=f"{rule.id}-{rule.slug}",
@@ -64,10 +68,10 @@ def make_finding(
         title=title,
         file=file,
         line=line,
-        evidence_masked=mask_evidence(evidence),
+        evidence_masked=mask_evidence(evidence, keep_paths=keep_paths),
         impact=impact,
         fix=fix,
-        hit_count=1,
+        hit_count=hit_count,
         confidence=confidence,
     )
 
@@ -76,7 +80,7 @@ def passed(rule: Rule, basis: str, *, file: str = "", line: int = 0) -> RuleOutc
     return RuleOutcome(status="pass", basis=basis, file=file, line=line)
 
 
-def failed(rule: Rule, basis: str, finding: Finding) -> RuleOutcome:
+def failed(rule: Rule, basis: str, finding: Finding, *, penalty: int = 0) -> RuleOutcome:
     """fail 必须携带 finding，保证 checks 与 findings 对得上。"""
     return RuleOutcome(
         status="fail",
@@ -84,6 +88,7 @@ def failed(rule: Rule, basis: str, finding: Finding) -> RuleOutcome:
         finding=finding,
         file=finding.file,
         line=finding.line,
+        penalty=penalty,
     )
 
 

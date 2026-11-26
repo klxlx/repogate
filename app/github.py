@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
@@ -28,6 +29,8 @@ logger = logging.getLogger("repogate.github")
 GITHUB_API = "https://api.github.com"
 MAX_API_REQUESTS = 3
 MAX_REQUEST_ATTEMPTS = 4  # 仅 tree 按 commit_sha 失败时，允许回退分支名重试一次
+MAX_NETWORK_ATTEMPTS = 3  # 5xx / RemoteProtocolError 共用：首试 + 2 次重试
+RETRY_DELAYS_S = (1.0, 3.0)
 TREE_SLOW_MS = 45000  # 超过即标记 tree_slow，页面提示「超大仓库」
 TREE_HARD_TIMEOUT_MS = 90000  # 硬超时：90 秒仍未返回才报 TIMEOUT
 TREE_READ_TIMEOUT_S = 90.0
@@ -84,6 +87,8 @@ class GitHubClient:
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
         self.request_count = 0
+        self.tree_attempts = 0
+        self._last_attempts = 0
         self._headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": USER_AGENT,
@@ -115,14 +120,55 @@ class GitHubClient:
         if status >= 400:
             raise upstream(f"GitHub 返回 HTTP {status}")
 
+    async def _send(self, url: str) -> tuple[httpx.Response, int]:
+        """5xx 与 RemoteProtocolError 重试 2 次（1s → 3s）；超时与 4xx 不重试。"""
+        for attempt in range(MAX_NETWORK_ATTEMPTS):
+            index = attempt + 1
+            self._last_attempts = index
+            try:
+                response = await self._client.get(
+                    url, headers=self._headers, follow_redirects=True
+                )
+            except httpx.TimeoutException as exc:
+                raise timeout() from exc
+            except httpx.RemoteProtocolError as exc:
+                if index >= MAX_NETWORK_ATTEMPTS:
+                    raise fetch_failed(
+                        f"网络请求 {index} 次仍失败（RemoteProtocolError）"
+                    ) from exc
+                logger.warning(
+                    "github network retry %d/%d url=%s", index, MAX_NETWORK_ATTEMPTS, url
+                )
+                await asyncio.sleep(RETRY_DELAYS_S[attempt])
+                continue
+            except httpx.HTTPError as exc:
+                raise upstream(f"网络错误：{exc.__class__.__name__}") from exc
+
+            if response.status_code >= 500:
+                if index >= MAX_NETWORK_ATTEMPTS:
+                    raise fetch_failed(
+                        f"GitHub 连续返回 HTTP {response.status_code}（{index} 次）"
+                    )
+                logger.warning(
+                    "github http %d, retry %d/%d url=%s",
+                    response.status_code,
+                    index,
+                    MAX_NETWORK_ATTEMPTS,
+                    url,
+                )
+                await asyncio.sleep(RETRY_DELAYS_S[attempt])
+                continue
+            return response, index
+
+        raise fetch_failed("网络请求重试耗尽")
+
     async def _get_json(self, url: str, *, allow_missing: bool = False, extra: bool = False) -> dict | None:
         self._begin_request("GET", url, extra=extra)
         try:
-            response = await self._client.get(url, headers=self._headers, follow_redirects=True)
-        except httpx.TimeoutException as exc:
-            raise timeout() from exc
-        except httpx.HTTPError as exc:
-            raise upstream(f"网络错误：{exc.__class__.__name__}") from exc
+            response, attempts = await self._send(url)
+        finally:
+            if "/git/trees/" in url:
+                self.tree_attempts += self._last_attempts
 
         if allow_missing and response.status_code in (404, 422):
             logger.info("tree ref missing status=%d url=%s", response.status_code, url)
@@ -260,5 +306,6 @@ async def fetch_repo_bundle(raw_url: str) -> RepoBundle:
                 commit_ms=commit_ms,
                 tree_ms=tree_ms,
                 tree_slow=tree_slow,
+                tree_attempts=gh.tree_attempts or 1,
             ),
         )

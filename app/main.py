@@ -78,6 +78,7 @@ async def _inspect(repo_url: str) -> InspectResponse:
     scan = scan_tree(bundle.tree, github_truncated=bundle.tree_truncated_by_github)
 
     snapshot = build_snapshot(bundle, owner, repo)
+    snapshot.text_total = scan.scope.files_scanned
     content = await fetch_contents(
         owner, repo, bundle.commit_sha, plan_content_paths(snapshot)
     )
@@ -93,6 +94,9 @@ async def _inspect(repo_url: str) -> InspectResponse:
     stats.content_bytes = content.bytes
     stats.content_failed = len(content.failed)
     stats.content_files_available = len(content.contents)
+    stats.path_scan_files = len(content.contents)
+    stats.path_scan_bytes = content.bytes
+    stats.content_total_text_files = scope.files_scanned
     timing = bundle.timing
     logger.info(
         "inspect ok repo=%s ref=%s sha=%s requests=%d content_requests=%d content_bytes=%d "

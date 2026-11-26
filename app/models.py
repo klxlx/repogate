@@ -49,6 +49,9 @@ class StatsInfo(BaseModel):
     content_bytes: int = 0
     content_failed: int = 0
     content_files_available: int = 0
+    path_scan_files: int = 0
+    path_scan_bytes: int = 0
+    content_total_text_files: int = 0
 
 
 class Finding(BaseModel):
@@ -96,6 +99,7 @@ class TimingInfo(BaseModel):
     commit_ms: int = 0
     tree_ms: int = 0
     tree_slow: bool = False
+    tree_attempts: int = 1
 
 
 class InspectResponse(BaseModel):

@@ -30,6 +30,71 @@ def test_tree_falls_back_to_branch_on_404() -> None:
     asyncio.run(run())
 
 
+def test_tree_retries_remote_protocol_error(monkeypatch) -> None:
+    monkeypatch.setattr("app.github.RETRY_DELAYS_S", (0.0, 0.0))
+    calls: list[str] = []
+
+    async def run() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.url.path)
+            if len(calls) < 3:
+                raise httpx.RemoteProtocolError("peer closed", request=request)
+            return httpx.Response(200, json={"sha": "root", "tree": [], "truncated": False})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            gh = GitHubClient(client)
+            tree, fallback = await gh.get_tree("owner", "repo", "a" * 40, "main")
+
+        assert fallback is False
+        assert tree["tree"] == []
+        assert gh.tree_attempts == 3
+        assert gh.request_count == 1
+
+    asyncio.run(run())
+
+
+def test_tree_retries_5xx(monkeypatch) -> None:
+    monkeypatch.setattr("app.github.RETRY_DELAYS_S", (0.0, 0.0))
+    calls: list[int] = []
+
+    async def run() -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            if len(calls) < 3:
+                return httpx.Response(502, json={"message": "bad gateway"})
+            return httpx.Response(200, json={"sha": "root", "tree": [], "truncated": False})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            gh = GitHubClient(client)
+            tree, _ = await gh.get_tree("owner", "repo", "a" * 40, "main")
+
+        assert tree["tree"] == []
+        assert gh.tree_attempts == 3
+
+    asyncio.run(run())
+
+
+def test_tree_reports_fetch_failed_after_three_attempts(monkeypatch) -> None:
+    monkeypatch.setattr("app.github.RETRY_DELAYS_S", (0.0, 0.0))
+
+    async def run() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.RemoteProtocolError("peer closed", request=request)
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            gh = GitHubClient(client)
+            with pytest.raises(ScanError) as caught:
+                await gh.get_tree("owner", "repo", "a" * 40, "main")
+
+        assert caught.value.code == "FETCH_FAILED"
+        assert gh.tree_attempts == 3
+
+    asyncio.run(run())
+
+
 def test_parse_repo_url_accepts_git_suffix_and_trailing_slash() -> None:
     assert parse_repo_url("https://github.com/psf/requests.git") == ("psf", "requests")
     assert parse_repo_url("https://github.com/psf/requests/") == ("psf", "requests")

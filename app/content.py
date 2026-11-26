@@ -10,10 +10,10 @@ from urllib.parse import quote
 import httpx
 
 RAW_BASE = "https://raw.githubusercontent.com"
-MAX_FILES = 12
-MAX_TOTAL_BYTES = 3 * 1024 * 1024
+MAX_FILES = 120
+MAX_TOTAL_BYTES = 8 * 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024
-CONCURRENCY = 4
+CONCURRENCY = 6
 REQUEST_TIMEOUT_S = 15.0
 MAX_ATTEMPTS = 2  # 超时与 5xx 重试一次；404 等直接失败
 

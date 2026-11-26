@@ -107,6 +107,16 @@ def _priority(path: str) -> int:
     return 5
 
 
+def is_text_file(path: str, size: int) -> bool:
+    """文件是否可作为文本内容读取（与 scope.files_scanned 口径一致）。"""
+    return _is_textizable(path) and 0 <= size <= MAX_ANALYZABLE_BYTES
+
+
+def sample_priority(path: str) -> int:
+    """内容抽样顺序：配置 → 脚本 → 说明/清单 → 源码 → 其他（1 最高）。"""
+    return _priority(path)
+
+
 def is_excluded_dir(path: str) -> bool:
     """路径中任一目录段命中排除名单（最后一段是文件名，不参与）。"""
     return any(part in EXCLUDED_DIR_NAMES for part in path.split("/")[:-1])

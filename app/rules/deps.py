@@ -40,8 +40,14 @@ COMPOSE_GLOBS = ("docker-compose*.yml", "docker-compose*.yaml")
 WINDOWS_BUILD_FILES = frozenset({"build.ps1", "build.bat"})
 # 第 3 步 R06/R07 复用：Windows 专用入口在 Linux/容器环境需替代方案
 WINDOWS_ONLY_IMPACT = "存在构建入口，但为 Windows 专用，Linux/容器环境需替代方案"
-# 构建/启动脚本：v1.7 允许 compile/build/watch 作为可复现构建入口
-SCRIPT_KEYS = ("start", "dev", "serve", "compile", "build", "watch")
+# v1.8 收口：只认 start/dev/serve/build/compile，不认 watch / test / lint
+START_KEYS = ("start", "dev", "serve")
+BUILD_KEYS = ("build", "compile")
+SCRIPT_KEYS = START_KEYS + BUILD_KEYS
+START_ENTRY_NOTE = "启动入口"
+BUILD_ENTRY_NOTE = "构建入口，无启动命令"
+START_ENTRY_IMPACT = "存在启动入口，可在 Linux/容器环境直接运行"
+BUILD_ENTRY_IMPACT = "仅有构建入口，无启动命令，Linux/容器环境需补充启动方式"
 
 _OPERATOR_RE = re.compile(r"(==|>=|<=|~=|!=|>|<)")
 _FLOATING_PREFIXES = ("^", "~", "*", ">", "latest")
@@ -318,14 +324,17 @@ def detect_start_missing(snapshot: Snapshot) -> RuleOutcome:
             if isinstance(scripts, dict):
                 for key in SCRIPT_KEYS:
                     if key in scripts:
+                        note = START_ENTRY_NOTE if key in START_KEYS else BUILD_ENTRY_NOTE
                         if level == LEVEL_WEAK:
                             return degraded(
                                 R05,
-                                f"仅在弱目录 {package} 发现启动脚本，无法确认主项目",
+                                f"仅在弱目录 {package} 发现{note}，无法确认主项目",
                                 file=package,
                             )
                         return passed(
-                            R05, f"{LEVEL_LABEL[level]} {package}:scripts.{key}", file=package
+                            R05,
+                            f"{LEVEL_LABEL[level]} {package}:scripts.{key}（{note}）",
+                            file=package,
                         )
 
         if level == LEVEL_WEAK:
@@ -343,7 +352,7 @@ def detect_start_missing(snapshot: Snapshot) -> RuleOutcome:
         evidence=(
             "未找到 Makefile / Dockerfile / docker-compose* / *.sln(.slnx) / CMakeLists.txt / "
             "build.ps1 / build.bat / build.sh / 根目录 *.csproj，"
-            "package.json 也未声明 start/dev/serve/compile/build/watch（已检查根目录与一层子目录）"
+            "package.json 也未声明 start/dev/serve/build/compile（已检查根目录与一层普通子目录）"
         ),
         impact="无法确认服务如何构建与启动，部署与验证成本高",
         fix="补充 Dockerfile / Makefile 或构建脚本，或在 package.json 声明 start/dev/serve",

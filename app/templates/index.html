@@ -9,7 +9,7 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <p class="eyebrow">RepoGate / 第 2 步（v1.7）：规则引擎 R01–R05</p>
+      <p class="eyebrow">RepoGate / 第 3 步（v1.8）：R01–R08</p>
       <h1>输入公开 GitHub 仓库地址，先看它真实长什么样</h1>
       <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；只按需读取少量说明与依赖清单，不下载其它文件内容。</p>
     </header>
@@ -127,7 +127,7 @@
     {% endif %}
 
     <footer class="foot">
-      <p>单仓库最多 3 次 GitHub API 请求：仓库元信息、默认分支 commit、git/trees；另从 raw.githubusercontent 读取 ≤12 个说明/清单文件（≤3MB、并发 4、单文件 ≤512KB），不调用 contents API、不下载其它文件内容。</p>
+      <p>单仓库最多 3 次 GitHub API 请求：仓库元信息、默认分支 commit、git/trees；另从 raw.githubusercontent 读取 ≤120 个文本文件（≤8MB、并发 6、单文件 ≤512KB），不调用 contents API、不下载其它文件内容。</p>
       <p>统计口径：树内全部 blob 计入清单；清单内文本且 ≤1MB 才纳入分析，媒体/二进制/压缩包/超大文件只跳过分析、不跳过计数。清单硬顶：20000 个 blob（触发时按配置/脚本/说明文档/源码/其余的顺序采样）。</p>
     </footer>
   </main>

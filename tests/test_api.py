@@ -110,8 +110,17 @@ def test_api_inspect_success(monkeypatch) -> None:
         "content_bytes": 0,
         "content_failed": 0,
         "content_files_available": 0,
+        "path_scan_files": 0,
+        "path_scan_bytes": 0,
+        "content_total_text_files": 2,
     }
-    assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33, "tree_slow": False}
+    assert body["timing"] == {
+        "meta_ms": 11,
+        "commit_ms": 22,
+        "tree_ms": 33,
+        "tree_slow": False,
+        "tree_attempts": 1,
+    }
     assert [item["path"] for item in body["files"]] == ["README.md", "src/main.py"]
 
 
@@ -144,7 +153,9 @@ def test_api_rules_registry() -> None:
 
     assert response.status_code == 200
     rules = response.json()["rules"]
-    assert [rule["id"] for rule in rules] == ["R01", "R02", "R03", "R04", "R05"]
+    assert [rule["id"] for rule in rules] == [
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"
+    ]
     for rule in rules:
         assert set(rule) == {"id", "dimension", "severity", "points", "needs_content"}
     assert rules[0]["points"] == -10
@@ -178,8 +189,10 @@ def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
     body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
 
     checks = body["checks"]
-    assert [check["rule_id"] for check in checks] == ["R01", "R02", "R03", "R04", "R05"]
-    assert len(checks) == 5
+    assert [check["rule_id"] for check in checks] == [
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"
+    ]
+    assert len(checks) == 8
     for check in checks:
         assert check["status"] in {"pass", "fail", "degraded", "n/a"}
         assert check["basis"].strip()

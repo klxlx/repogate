@@ -24,6 +24,7 @@ class Snapshot:
     tree_truncated_by_github: bool = False
     contents: dict[str, str] = field(default_factory=dict)
     failed_paths: frozenset[str] = frozenset()
+    text_total: int = 0
 
     def shallow_blobs(self) -> list[BlobRef]:
         """根目录与一层子目录：path 中最多一个斜杠。"""

@@ -212,7 +212,14 @@ def test_r05_passes_with_cross_platform_entries() -> None:
     scripts = json.dumps({"scripts": {"dev": "vite"}})
     outcome = detect_start_missing(snapshot({"package.json": 100}, {"package.json": scripts}))
     assert outcome.status == "pass"
-    assert outcome.basis == "根目录 package.json:scripts.dev"
+    assert outcome.basis == "根目录 package.json:scripts.dev（启动入口）"
+
+    scripts = json.dumps({"scripts": {"compile": "tsc"}})
+    outcome = detect_start_missing(snapshot({"package.json": 100}, {"package.json": scripts}))
+    assert outcome.basis == "根目录 package.json:scripts.compile（构建入口，无启动命令）"
+
+    scripts = json.dumps({"scripts": {"watch": "tsc -w"}})
+    assert detect_start_missing(snapshot({"package.json": 100}, {"package.json": scripts})).status == "fail"
 
 
 def test_r05_passes_with_windows_entries_and_marks_impact() -> None:
@@ -251,8 +258,10 @@ def test_r05_degrades_when_package_json_unreadable() -> None:
 def test_evaluate_returns_check_per_rule_and_consistent_findings() -> None:
     evaluation = evaluate(snapshot())
 
-    assert len(evaluation.checks) == 5
-    assert [check.rule_id for check in evaluation.checks] == ["R01", "R02", "R03", "R04", "R05"]
+    assert len(evaluation.checks) == 8
+    assert [check.rule_id for check in evaluation.checks] == [
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"
+    ]
     assert all(check.basis.strip() for check in evaluation.checks)
     fail_rules = {check.rule_id for check in evaluation.checks if check.status == "fail"}
     clean_rules = {

@@ -1,14 +1,15 @@
-"""GitHub 取数：正常路径严格 3 次 API 调用（HEAD + meta + trees）。
+"""GitHub 取数：HEAD 走免配额 atom，内容路径为 meta + trees。
 
-v3.1 拆成两步：
-- resolve_head：只解析默认分支 HEAD（1 次 `commits/HEAD`），用于命中 commit 缓存；
-- fetch_repo_bundle：缓存未命中时补 meta 并按 commit SHA 拉文件树。
+v3.2 拆成两步：
+- resolve_head：默认分支用 atom feed 解析（1 次非 API 请求），用于命中 commit 缓存；
+- fetch_repo_bundle：缓存未命中时补元信息并按 commit SHA 拉文件树。
 """
 
 from __future__ import annotations
 
 import asyncio
 import datetime
+import html
 import json
 import logging
 import os
@@ -32,17 +33,25 @@ from .models import TimingInfo
 logger = logging.getLogger("repogate.github")
 
 GITHUB_API = "https://api.github.com"
-MAX_API_REQUESTS = 3
+MAX_API_REQUESTS = 2  # HEAD 走 atom；首次扫描只允许 meta + tree 两次 API，tree 分支回退另计
 MAX_REQUEST_ATTEMPTS = 4  # 仅 tree 按 commit_sha 失败时，允许回退分支名重试一次
 MAX_NETWORK_ATTEMPTS = 3  # 5xx / RemoteProtocolError 共用：首试 + 2 次重试
 RETRY_DELAYS_S = (1.0, 3.0)
 TREE_SLOW_MS = 45000  # 超过即标记 tree_slow，页面提示「超大仓库」
 TREE_HARD_TIMEOUT_MS = 90000  # 硬超时：90 秒仍未返回才报 TIMEOUT
 TREE_READ_TIMEOUT_S = 90.0
-USER_AGENT = "RepoGate/3.1 (repository intake inspection)"
+USER_AGENT = "RepoGate/3.2 (repository intake inspection)"
 DEFAULT_TIMEOUT = httpx.Timeout(
     connect=10.0, read=TREE_READ_TIMEOUT_S, write=30.0, pool=10.0
 )
+GITHUB_WEB = "https://github.com"
+_ATOM_ENTRY_RE = re.compile(r"<entry\b.*?</entry>", re.IGNORECASE | re.DOTALL)
+_ATOM_SHA_RE = re.compile(r"Grit::Commit/([0-9a-fA-F]{40})")
+_ATOM_TITLE_RE = re.compile(r"<title>\s*(.*?)\s*</title>", re.IGNORECASE | re.DOTALL)
+_ATOM_AUTHOR_RE = re.compile(
+    r"<author>\s*<name>\s*(.*?)\s*</name>", re.IGNORECASE | re.DOTALL
+)
+_ATOM_UPDATED_RE = re.compile(r"<updated>\s*(.*?)\s*</updated>", re.IGNORECASE | re.DOTALL)
 
 _client: httpx.AsyncClient | None = None
 
@@ -66,6 +75,10 @@ _REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
+class AtomUnavailable(Exception):
+    """atom feed 不可用（404/5xx/解析失败）；上层可回落 API 元信息。"""
+
+
 @dataclass
 class RepoHead:
     """默认分支 HEAD 的轻量解析结果；缓存判断只需要它。"""
@@ -76,7 +89,7 @@ class RepoHead:
     commit: dict
     repo_meta: dict | None = None
     ref: str = ""
-    request_count: int = 1
+    request_count: int = 0
     timing: TimingInfo = field(default_factory=TimingInfo)
 
 
@@ -124,7 +137,7 @@ def parse_repo_url(raw: str) -> tuple[str, str]:
 
 
 class GitHubClient:
-    """每实例一次请求阶段；正常单仓库总计 3 次。"""
+    """每实例一次请求阶段；正常单仓库 2 次 API（meta + tree）+ 1 次 atom。"""
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
@@ -142,7 +155,7 @@ class GitHubClient:
 
     def _begin_request(self, method: str, url: str, extra: bool = False) -> None:
         if self.request_count >= MAX_API_REQUESTS and not extra:
-            raise upstream("内部请求预算超限（单仓库最多 3 次 GitHub 请求）")
+            raise upstream("内部请求预算超限（单仓库最多 2 次 GitHub API 请求）")
         if self.request_count >= MAX_REQUEST_ATTEMPTS:
             raise upstream("内部请求预算超限（tree 回退只允许一次）")
         self.request_count += 1
@@ -310,32 +323,110 @@ def _normalize_commit(payload: dict) -> dict:
     }
 
 
-def _elapsed_ms(started_at: float) -> int:
-    return int(round((time.monotonic() - started_at) * 1000))
+def _atom_text(pattern: re.Pattern[str], text: str) -> str:
+    match = pattern.search(text)
+    if not match:
+        return ""
+    return html.unescape(re.sub(r"\s+", " ", match.group(1)).strip())
 
 
-async def resolve_head(raw_url: str) -> RepoHead:
-    """只解析默认分支 HEAD：1 次 `commits/HEAD`，不拉元信息、不拉树、不读内容。"""
-    owner, repo = parse_repo_url(raw_url)
+def _atom_commit(sha: str, entry: str) -> dict:
+    return {
+        "sha": sha,
+        "message": _atom_text(_ATOM_TITLE_RE, entry),
+        "author": _atom_text(_ATOM_AUTHOR_RE, entry),
+        "date": _atom_text(_ATOM_UPDATED_RE, entry),
+    }
 
+
+async def _head_from_atom(
+    owner: str,
+    repo: str,
+    branch: str,
+    *,
+    meta: dict | None = None,
+    meta_ms: int = 0,
+    request_count: int = 0,
+) -> RepoHead:
+    """用 commits/{branch}.atom 解析 HEAD；不消耗 api.github.com 配额。"""
     client = await get_client()
-    gh = GitHubClient(client)
+    url = (
+        f"{GITHUB_WEB}/{quote(owner)}/{quote(repo)}/commits/"
+        f"{quote(branch, safe='/')}.atom"
+    )
     started = time.monotonic()
-    payload = await gh.get_commit(owner, repo, "HEAD")
-    commit_ms = _elapsed_ms(started)
+    try:
+        response = await client.get(
+            url,
+            headers={"Accept": "application/atom+xml,application/xml", "User-Agent": USER_AGENT},
+            follow_redirects=True,
+            timeout=20.0,
+        )
+    except httpx.HTTPError as exc:
+        raise AtomUnavailable(f"atom 网络错误：{exc.__class__.__name__}") from exc
 
-    sha = payload.get("sha")
-    if not isinstance(sha, str) or not _SHA_RE.match(sha):
-        raise fetch_failed("无法获取有效的 40 位 commit SHA")
+    if response.status_code != 200:
+        raise AtomUnavailable(f"atom HTTP {response.status_code}")
+
+    entry_match = _ATOM_ENTRY_RE.search(response.text)
+    if entry_match is None:
+        raise AtomUnavailable("atom 无 entry")
+    entry = entry_match.group(0)
+    sha_match = _ATOM_SHA_RE.search(entry)
+    if sha_match is None or not _SHA_RE.match(sha_match.group(1).lower()):
+        raise AtomUnavailable("atom 无有效 40 位 SHA")
+    sha = sha_match.group(1).lower()
 
     return RepoHead(
         owner=owner,
         repo=repo,
         commit_sha=sha,
-        commit=_normalize_commit(payload),
-        request_count=gh.request_count,
-        timing=TimingInfo(commit_ms=commit_ms),
+        commit=_atom_commit(sha, entry),
+        repo_meta=_normalize_repo(meta) if meta is not None else None,
+        ref=branch,
+        request_count=request_count,
+        timing=TimingInfo(meta_ms=meta_ms, commit_ms=_elapsed_ms(started)),
     )
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int(round((time.monotonic() - started_at) * 1000))
+
+
+async def resolve_head(raw_url: str, *, branch: str | None = None) -> RepoHead:
+    """解析默认分支 HEAD；优先 atom（免 API 配额），404/不可用时回落一次元信息。
+
+    `branch` 可以从报告缓存里的 `repo.default_branch` 传入；传入时缓存命中
+    路径不会请求 api.github.com。
+    """
+    owner, repo = parse_repo_url(raw_url)
+
+    if branch:
+        try:
+            return await _head_from_atom(owner, repo, branch)
+        except AtomUnavailable:
+            logger.warning("atom unavailable branch=%s repo=%s/%s; fallback meta", branch, owner, repo)
+
+    client = await get_client()
+    gh = GitHubClient(client)
+    meta_started = time.monotonic()
+    meta = await gh.get_repo(owner, repo)
+    meta_ms = _elapsed_ms(meta_started)
+    new_branch = meta.get("default_branch")
+    if not isinstance(new_branch, str) or not new_branch:
+        raise fetch_failed("无法从仓库元信息中获取默认分支")
+
+    try:
+        return await _head_from_atom(
+            owner,
+            repo,
+            new_branch,
+            meta=meta,
+            meta_ms=meta_ms,
+            request_count=gh.request_count,
+        )
+    except AtomUnavailable as exc:
+        raise fetch_failed(f"commits atom 不可用且 API 元信息无法解析 HEAD：{exc}") from exc
 
 
 async def fetch_repo_bundle(raw_url: str, head: RepoHead | None = None) -> RepoBundle:

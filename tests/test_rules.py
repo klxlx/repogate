@@ -290,6 +290,6 @@ def test_rule_metadata_matches_contract() -> None:
     assert (R10.dimension, R10.severity, R10.needs_content) == ("secrets", "critical", True)
     assert (R11.dimension, R11.severity, R11.needs_content) == ("secrets", "critical", True)
     assert (R05.dimension, R05.severity, R05.points, R05.needs_content) == ("deps", "medium", -4, True)
-    assert (R12.dimension, R12.severity, R12.points, R12.needs_content) == ("maintenance", "low", -4, False)
+    assert (R12.dimension, R12.severity, R12.points, R12.needs_content) == ("maintenance", "low", -3, False)
     assert (R13.dimension, R13.severity, R13.points, R13.needs_content) == ("maintenance", "low", -3, False)
     assert (R14.dimension, R14.severity, R14.points, R14.needs_content) == ("maintenance", "low", -3, False)

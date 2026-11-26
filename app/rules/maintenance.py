@@ -118,7 +118,7 @@ R12 = Rule(
     slug="license-missing",
     dimension="maintenance",
     severity="low",
-    points=-4,
+    points=-3,
     needs_content=False,
     detect=detect_license_missing,
 )

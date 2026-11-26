@@ -8,7 +8,78 @@ import httpx
 import pytest
 
 from app.errors import ScanError
-from app.github import GitHubClient, parse_repo_url
+from app.github import GitHubClient, parse_repo_url, resolve_head
+
+
+ATOM_SHA = "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d"
+
+
+def _atom_body() -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<feed xmlns="http://www.w3.org/2005/Atom">\n'
+        "  <entry>\n"
+        f"    <id>tag:github.com,2008:Grit::Commit/{ATOM_SHA}</id>\n"
+        "    <title>Fix &amp; stuff</title>\n"
+        "    <updated>2025-01-02T03:04:05Z</updated>\n"
+        "    <author><name>Octo Cat</name></author>\n"
+        "  </entry>\n"
+        "</feed>\n"
+    )
+
+
+def test_resolve_head_uses_atom_without_api_quota(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def run() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            assert request.url.host == "github.com"
+            return httpx.Response(200, text=_atom_body())
+
+        async def fake_client() -> httpx.AsyncClient:
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        monkeypatch.setattr("app.github.get_client", fake_client)
+        head = await resolve_head("https://github.com/octocat/Hello-World", branch="master")
+
+        assert head.commit_sha == ATOM_SHA
+        assert head.ref == "master"
+        assert head.request_count == 0
+        assert head.commit["message"] == "Fix & stuff"
+        assert calls and "commits/master.atom" in calls[0]
+
+    asyncio.run(run())
+
+
+def test_atom_404_falls_back_to_api_meta_then_atom(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def run() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            if request.url.host == "github.com":
+                if "commits/old-name.atom" in str(request.url):
+                    return httpx.Response(404, text="not found")
+                return httpx.Response(200, text=_atom_body())
+            return httpx.Response(
+                200,
+                json={"default_branch": "main", "full_name": "octocat/Hello-World", "stargazers_count": 1},
+            )
+
+        async def fake_client() -> httpx.AsyncClient:
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        monkeypatch.setattr("app.github.get_client", fake_client)
+        head = await resolve_head("https://github.com/octocat/Hello-World", branch="old-name")
+
+        assert head.ref == "main"
+        assert head.repo_meta is not None
+        assert head.repo_meta["full_name"] == "octocat/Hello-World"
+        assert head.repo_meta["stars"] == 1
+        assert any("/repos/octocat/Hello-World" in url for url in calls)
+
+    asyncio.run(run())
 
 
 def test_tree_falls_back_to_branch_on_404() -> None:

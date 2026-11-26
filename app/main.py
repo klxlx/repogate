@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import cache
+from .advice import build_advice
 from .content import fetch_contents
 from .errors import ScanError, internal, invalid_url
 from .github import (
@@ -26,6 +27,8 @@ from .github import (
     resolve_head,
 )
 from .models import (
+    AdviceRequest,
+    AdviceResponse,
     CacheInfo,
     CommitInfo,
     HealthResponse,
@@ -287,8 +290,18 @@ async def _inspect(repo_url: str, *, refresh: bool = False) -> InspectResponse:
     started = time.monotonic()
     owner, repo = parse_repo_url(repo_url)
 
+    # 缓存里已有 default_branch 时只用 atom 解析 HEAD，不消耗 API 元信息配额。
+    cached_branch: str | None = None
+    latest = cache.load_latest(owner, repo)
+    if latest is not None:
+        repo_payload = latest.report.get("repo")
+        if isinstance(repo_payload, dict):
+            branch = repo_payload.get("default_branch")
+            if isinstance(branch, str) and branch:
+                cached_branch = branch
+
     try:
-        head: RepoHead = await resolve_head(repo_url)
+        head: RepoHead = await resolve_head(repo_url, branch=cached_branch)
 
         if not refresh:
             cached = cache.load(owner, repo, head.commit_sha)
@@ -470,6 +483,12 @@ async def api_inspect(
     return await _inspect(payload.repo_url, refresh=bool(refresh))
 
 
+@app.post("/api/advice", response_model=AdviceResponse)
+async def api_advice(payload: AdviceRequest) -> AdviceResponse:
+    result = await _inspect(payload.repo, refresh=bool(payload.refresh))
+    return await build_advice(result, refresh=bool(payload.refresh))
+
+
 @app.get("/api/rules", response_model=RulesResponse)
 async def api_rules() -> RulesResponse:
     return RulesResponse(rules=[rule.info() for rule in RULES])
@@ -480,7 +499,7 @@ async def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"result": None, "error": None, "repo_url": ""},
+        {"result": None, "error": None, "repo_url": "", "advice": None},
     )
 
 
@@ -497,6 +516,7 @@ async def index_submit(request: Request, repo_url: str = Form(...)) -> HTMLRespo
             status_code=error.http_status,
         )
     context = _result_context(result)
+    context["advice"] = await build_advice(result)
     context.update(
         {
             "error": None,

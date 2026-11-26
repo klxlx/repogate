@@ -89,7 +89,7 @@ def fake_bundle(
         tree=make_tree(),
         tree_ref_fallback=fallback,
         tree_truncated_by_github=github_truncated,
-        request_count=3,
+        request_count=2,
         timing=TimingInfo(meta_ms=11, commit_ms=22, tree_ms=33, tree_slow=tree_slow),
         commit={
             "sha": sha,
@@ -114,7 +114,7 @@ def install_fakes(
     calls = fetch_calls if fetch_calls is not None else [0]
     resolves = resolve_calls if resolve_calls is not None else [0]
 
-    async def fake_resolve(_: str) -> RepoHead:
+    async def fake_resolve(_: str, *, branch: str | None = None) -> RepoHead:
         resolves[0] += 1
         if head_error:
             raise head_error
@@ -146,7 +146,7 @@ def test_api_health_exposes_version_and_rule_count() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["engine_version"] == "repogate-3.1"
+    assert body["engine_version"] == "repogate-3.2"
     assert body["schema_version"] == 1
     assert body["rules_count"] == 14
 
@@ -182,7 +182,7 @@ def test_api_inspect_success_contract(monkeypatch) -> None:
     assert body["schema_version"] == 1
     assert body["ok"] is True
     assert body["provider"] == "github"
-    assert body["request_count"] == 3
+    assert body["request_count"] == 2
     assert body["mode"] == "metadata"
     assert body["source"] == {
         "method": "trees_api",
@@ -198,7 +198,7 @@ def test_api_inspect_success_contract(monkeypatch) -> None:
     assert body["ref"] == "master"
     assert body["commit"]["sha"] == SHA
     assert body["commit"]["message"] == "initial commit"
-    assert body["scan"]["engine_version"] == "repogate-3.1"
+    assert body["scan"]["engine_version"] == "repogate-3.2"
     assert body["scan"]["scanned_at"]
     assert body["scan"]["duration_ms"] >= 0
     assert body["scope"]["files_scanned"] == 2
@@ -209,7 +209,7 @@ def test_api_inspect_success_contract(monkeypatch) -> None:
     assert body["cache"]["cached_at"]
     assert body["warnings"] == []
     assert body["error"] is None
-    assert body["engine_version"] == "repogate-3.1"
+    assert body["engine_version"] == "repogate-3.2"
     assert body["scanned_at"] == body["scan"]["scanned_at"]
 
 
@@ -340,7 +340,7 @@ def test_rate_limited_with_cache_returns_stale_200(monkeypatch) -> None:
     first = client.get("/api/inspect", params={"repo": url})
     assert first.status_code == 200
 
-    async def fake_resolve(_: str):
+    async def fake_resolve(_: str, *, branch: str | None = None):
         raise rate_limited("03:00", 321)
 
     monkeypatch.setattr(main, "resolve_head", fake_resolve)
@@ -374,7 +374,7 @@ def test_stale_page_shows_warning_without_hiding_report(monkeypatch) -> None:
     url = "https://github.com/octocat/Hello-World"
     assert client.post("/", data={"repo_url": url}).status_code == 200
 
-    async def fake_resolve(_: str):
+    async def fake_resolve(_: str, *, branch: str | None = None):
         raise rate_limited("03:00", 321)
 
     monkeypatch.setattr(main, "resolve_head", fake_resolve)

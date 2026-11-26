@@ -136,6 +136,51 @@ class RulesResponse(BaseModel):
     rules: list[RuleInfo]
 
 
+class AdviceCacheInfo(BaseModel):
+    hit: bool = False
+    cached_at: str | None = None
+
+
+class AdviceAction(BaseModel):
+    title: str
+    why: str
+    how: str
+    effort: Literal["S", "M", "L"]
+    rule_ids: list[str] = Field(default_factory=list)
+
+
+class AdviceResponse(BaseModel):
+    """AI 接入建议的稳定对外结构；模型和规则 fallback 共用同一 schema。"""
+
+    schema_version: int = SCHEMA_VERSION
+    ok: bool = True
+    source: Literal["model", "rules_fallback"] = "rules_fallback"
+    model: str | None = None
+    prompt_version: str = "advice-v2"
+    latency_ms: int = 0
+    tokens: int = 0
+    summary: str = ""
+    actions: list[AdviceAction] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    cache: AdviceCacheInfo = Field(default_factory=AdviceCacheInfo)
+    warnings: list[WarningInfo] = Field(default_factory=list)
+    fallback_reason: str | None = None
+    finding_count: int = 0
+    sampling_ratio: float = 0.0
+    repo: str = ""
+    commit_sha: str = ""
+
+
+class AdviceRequest(BaseModel):
+    """POST /api/advice 请求体；repo 为主字段，兼容旧的 repo_url。"""
+
+    repo: str = Field(
+        validation_alias=AliasChoices("repo", "repo_url"),
+        serialization_alias="repo",
+    )
+    refresh: int = Field(0, ge=0, le=1)
+
+
 class TimingInfo(BaseModel):
     meta_ms: int = 0
     commit_ms: int = 0

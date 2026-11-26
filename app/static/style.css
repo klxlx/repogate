@@ -835,6 +835,140 @@ h2 {
   background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
 }
 
+.advice-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.advice-head h2 {
+  margin: 0;
+}
+
+.advice-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid #c9d7e8;
+  border-radius: 999px;
+  background: #edf4fc;
+  color: #315b88;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.advice-badge.muted {
+  border-color: var(--line);
+  background: #f3f5f7;
+  color: var(--muted);
+}
+
+.advice-summary {
+  margin: 10px 0 4px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.advice-actions {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.advice-action {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.advice-action p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.advice-action p b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.advice-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.advice-action-head strong {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.effort {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid #d7dde5;
+  border-radius: 4px;
+  color: #68737f;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px;
+}
+
+.rule-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.rule-ids span {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eef2f6;
+  color: #4c5d70;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px;
+}
+
+.advice-caveats {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.advice-caveats summary {
+  cursor: pointer;
+}
+
+.advice-caveats ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.advice-caveats li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.advice-basis {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
 .placeholder {
   margin: 8px 0 0;
   padding: 18px;

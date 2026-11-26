@@ -9,7 +9,7 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <p class="eyebrow">RepoGate / 第 6 步（v3.1）：缓存 + 契约 + golden</p>
+      <p class="eyebrow">RepoGate / 第 7 步（v3.2）：atom HEAD + AI 建议</p>
       <h1>这个仓库，能不能进内网？</h1>
       <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；14 条规则合成 0–100 分与一句话裁决。报告按 commit 内容寻址缓存，限流时返回带 stale 标记的旧报告。</p>
     </header>
@@ -210,8 +210,44 @@
 
     <section class="card advice-card">
       <p class="eyebrow">建议</p>
-      <h2>AI 建议</h2>
+      {% if advice and advice.source == "model" %}
+      <div class="advice-head">
+        <h2>AI 接入建议</h2>
+        <span class="advice-badge">{{ advice.model }} · {{ advice.latency_ms }}ms · {{ advice.tokens }} tokens</span>
+      </div>
+      {% else %}
+      <div class="advice-head">
+        <h2>接入建议（规则生成）</h2>
+        <span class="advice-badge muted">{% if advice and advice.model %}模型失败，已回退{% else %}未配置模型{% endif %}</span>
+      </div>
+      {% endif %}
+      {% if advice %}
+      <p class="advice-summary">{{ advice.summary }}</p>
+      <ol class="advice-actions">
+        {% for action in advice.actions %}
+        <li class="advice-action">
+          <div class="advice-action-head">
+            <strong>{{ action.title }}</strong>
+            <span class="effort">effort {{ action.effort }}</span>
+          </div>
+          <p><b>为什么：</b>{{ action.why }}</p>
+          <p><b>怎么做：</b>{{ action.how }}</p>
+          {% if action.rule_ids %}
+          <div class="rule-ids">{% for rid in action.rule_ids %}<span>{{ rid }}</span>{% endfor %}</div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% if advice.caveats %}
+      <details class="advice-caveats">
+        <summary>注意事项（{{ advice.caveats | length }} 条）</summary>
+        <ul>{% for caveat in advice.caveats %}<li>{{ caveat }}</li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+      <p class="advice-basis">建议基于 {{ advice.finding_count }} 条检测结果生成，抽样率 {{ "%.1f" | format(advice.sampling_ratio * 100) }}%，不代表全仓结论</p>
+      {% else %}
       <p class="placeholder">AI 建议将在后续接入。</p>
+      {% endif %}
     </section>
 
     <footer class="foot">

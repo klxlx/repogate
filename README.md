@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库能不能进内网。只读当前快照，不 clone、不执行代码、不扫 Git 历史；14 条规则合成 0–100 分、A/B/C/D 等级、一句话裁决，并输出一页三卡报告。当前完成**第 6 步（v3.1）：commit 缓存 + 更新跟踪 + 契约固化 + golden 回归**。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库能不能进内网。只读当前快照，不 clone、不执行代码、不扫 Git 历史；14 条规则合成 0–100 分、A/B/C/D 等级、一句话裁决，并输出一页三卡报告。当前完成**第 7 步（v3.2）：atom HEAD + AI 接入建议卡 + AI_USAGE 留痕**。
 
 ## 快速开始（Windows）
 
@@ -28,13 +28,14 @@ python3.13 -m venv .venv
 |---|---|
 | `GET /api/inspect?repo=<url>&refresh=0 或 1` | 查询参数版；每次先解析默认分支 HEAD，再决定缓存命中或重扫。`refresh=1` 跳过缓存。 |
 | `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段；同样支持 `?refresh=1`。 |
+| `POST /api/advice` | 请求体 `{"repo": "https://github.com/owner/repo", "refresh": 0}`；返回 AI 接入建议或规则 fallback；无模型时仍返回 200。 |
 | `GET /api/health` | 返回 `engine_version`、`schema_version`、`rules_count` |
 | `GET /api/rules` | 规则注册表：`id / dimension / severity / points / needs_content` |
 | `GET /docs` / `GET /redoc` | FastAPI 自动文档；两个 `/api/inspect` 方法都有 `response_model=InspectResponse` |
 | `GET /healthz` | 极简存活检查 `{"ok": true}` |
 | `GET /` | 单页表单，提交后展示结论 / 证据 / 建议三卡报告 |
 
-### v3.1 顶层契约（`schema_version: 1`）
+### v3.2 顶层契约（`schema_version: 1`）
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -59,7 +60,7 @@ python3.13 -m venv .venv
   "ok": true,
   "repo": {"owner": "psf", "name": "requests", "default_branch": "main", "head_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157", "pushed_at": "2026-11-02T16:55:12Z", "archived": false},
   "commit": {"sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157", "message": "…", "author": "…", "date": "…"},
-  "scan": {"engine_version": "repogate-3.1", "scanned_at": "2026-11-26T17:52:10.047040+00:00", "duration_ms": 7210},
+  "scan": {"engine_version": "repogate-3.2", "scanned_at": "2026-11-26T17:52:10.047040+00:00", "duration_ms": 7210},
   "stats": {"secret_scan_files": 120, "secret_sampling_ratio": 0.9756},
   "checks": [{"rule_id": "R01", "status": "pass", "basis": "根目录 README.md", "file": "README.md", "line": 0}],
   "findings": [{"rule_id": "R04", "severity": "low", "file": "pyproject.toml", "evidence_masked": "…"}],
@@ -129,16 +130,16 @@ python3.13 -m venv .venv
 | 504 | `TIMEOUT` | 稍后重试；文件树接近 90 秒硬上限 |
 | 500 | `INTERNAL` | 服务端未预期错误；不要当作仓库结论 |
 
-- 错误码只有这 6 个；`UPSTREAM_ERROR` / `INTERNAL_ERROR` / `NOT_FOUND` 为第 5 步旧名，v3.1 已统一替换。
+- 错误码只有这 6 个；`UPSTREAM_ERROR` / `INTERNAL_ERROR` / `NOT_FOUND` 为第 5 步旧名，v3.2 已统一替换。
 - `error` 在成功响应中为 `null`；在 429 无缓存时 `retry_after` 为整数秒，缺失重置头时为 `null`。
 
-## 更新跟踪设计（v3.1）
+## 更新跟踪设计（v3.2）
 
 这一节回答四个问题，每条都指向代码或字段。
 
 ### 1. 怎么发现更新
 
-**每次访问都先解析默认分支 HEAD，再与缓存 key 比对。** `_inspect` 先调用 `app/github.py::resolve_head`（单次 `commits/HEAD`，1 次轻请求），得到 `head_sha`；`app/main.py::_inspect` 用 `owner/repo@sha` 查缓存。一致就复用，不一致就重扫。没有轮询、没有 webhook，也不依赖 `pushed_at` 猜测。
+**每次访问都先解析默认分支 HEAD，再与缓存 key 比对。** `_inspect` 先从最新缓存报告读取 `repo.default_branch`，再调用 `app/github.py::resolve_head(repo_url, branch=...)`；HEAD 走 `https://github.com/{owner}/{repo}/commits/{branch}.atom`，不消耗 `api.github.com` 的 60 次/时匿名配额。atom 返回 404 或不可解析时，才回落一次 `repos/{owner}/{repo}` 元信息拿 `default_branch`，再重试 atom；仍失败才报 `FETCH_FAILED`。拿到 `head_sha` 后，`app/main.py::_inspect` 用 `owner/repo@sha` 查缓存。一致就复用，不一致就重扫。没有轮询、没有 webhook，也不依赖 `pushed_at` 猜测。
 
 ### 2. 怎么避免全量重算
 
@@ -148,7 +149,7 @@ python3.13 -m venv .venv
 .cache/reports/<owner>__<repo>/<sha>.json
 ```
 
-缓存内容是完整报告 JSON + `schema_version` + `cached_at` + `duration_ms`，由 `app/cache.py::save` 原子写入（同目录 tmp + `os.replace`），失败不落盘；读取由 `cache.load` 完成。命中时不再请求元信息、tree，也不读 raw 内容，只保留 1 次 HEAD 轻请求。每仓按 mtime 保留最近 5 份，`_prune` 淘汰第 6 份及更旧。连接池复用后，热身状态下缓存命中实测约 110–135ms（上限要求 <300ms）。
+缓存内容是完整报告 JSON + `schema_version` + `cached_at` + `duration_ms`，由 `app/cache.py::save` 原子写入（同目录 tmp + `os.replace`），失败不落盘；读取由 `cache.load` 完成。命中时不再请求元信息、tree，也不读 raw 内容，只发 1 次 atom HEAD，且不占 API 配额。每仓按 mtime 保留最近 5 份，`_prune` 淘汰第 6 份及更旧。连接池复用后，热身状态下缓存命中实测约 109–135ms（上限要求 <300ms）。
 
 commit 不变 → 字节级复用；commit 变了 → key 自然不同，不需要任何缓存失效逻辑。`?refresh=1` 跳过命中并重新扫描。
 
@@ -167,12 +168,79 @@ commit 不变 → 字节级复用；commit 变了 → key 自然不同，不需�
 
 限流兜底不改变规则结论，只改变缓存元数据；导出 JSON 同样含 `cache` 与 `warnings`。
 
-**未来工作**：webhook / 定时重扫、分布式缓存、多用户隔离与数据库都不在 v3.1 范围内；当前只用本地文件缓存。
+**未来工作**：webhook / 定时重扫、分布式缓存、多用户隔离与数据库都不在 v3.2 范围内；当前只用本地文件缓存。
+
+## AI 接入建议（第 7 步）
+
+这一层的判断标准不是“调没调模型”，而是**模型说错话时，服务端有没有能力发现并挡住**。三条原则缺一条都不算完成：
+
+1. **不给模型看原文**：只送结构化事实，不送文件内容、README 正文或 commit message 原文，避免注入与泄漏。
+2. **模型不许编**：输出必须过服务端 schema 校验；`action.rule_ids` 必须落在输入规则集中，未知 id 的动作整条丢弃。
+3. **没模型就说没模型**：未配置密钥或模型调用失败，返回规则模板生成，页面明确标「规则引擎生成，未调用模型」；不假装是 AI 结论。
+
+### 接口
+
+```http
+POST /api/advice
+Content-Type: application/json
+
+{"repo": "https://github.com/octocat/Hello-World", "refresh": 0}
+```
+
+- 依赖环境变量：`LLM_BASE_URL`（OpenAI 兼容，如 `https://api.example.com/v1`）、`LLM_API_KEY`、`LLM_MODEL`。
+- 无密钥 → HTTP 200，`source="rules_fallback"`、`model=null`、`fallback_reason="no_api_key"`；不报错、不空卡。
+- 超时 / 429 / JSON 解析失败 / schema 不过 → HTTP 200，`source="rules_fallback"`，`warnings[0].code="ADVICE_FALLBACK"`；绝不 500。
+- `refresh=1` 跳过 advice 缓存，同时让报告重新扫描。
+- advice 缓存路径：`.cache/advice/<owner>__<repo>/<sha>__<model>__advice-v2.json`；无模型时 model 段为 `rules`。同一 sha + 同一模型二次调用 `cache.hit=true`，不重复计费；`REPOGATE_ADVICE_CACHE_DIR` 可覆盖根目录。
+
+`AdviceResponse` 主要字段：`source / model / latency_ms / tokens / summary / actions / caveats / cache{hit,cached_at} / warnings / fallback_reason / finding_count / sampling_ratio / repo / commit_sha`。代码在 `app/advice.py`，FastAPI 路由在 `app/main.py`。
+
+### 输入上下文（严格白名单）
+
+```json
+{
+  "repo": {"owner": "octocat", "name": "Hello-World", "head_sha": "...", "grade": "D", "total": 59},
+  "score": {"dimensions": [...], "caps": [...]},
+  "checks": [{"rule_id": "R03", "status": "fail"}],
+  "findings": [{"rule_id": "R03", "severity": "high", "path": "", "line": 0, "evidence": "已掩码证据", "impact": "..."}],
+  "stats": {"text_files": 3, "sampled": 3, "sampling_ratio": 1.0}
+}
+```
+
+- `findings` 最多 8 条；`evidence` 只取报告里的 `evidence_masked`，不取原始文件内容。
+- 禁止放入：文件内容、README 正文、commit message 原文、原始未掩码证据，以及任何 HTTP 响应正文。
+
+### 输出 schema 与服务端校验
+
+```json
+{
+  "summary": "≤80 字，一句话结论",
+  "actions": [
+    {"title": "≤20 字", "why": "≤60 字，引用 rule_id", "how": "≤120 字，可执行步骤", "effort": "S|M|L", "rule_ids": ["R03"]}
+  ],
+  "caveats": ["≤60 字，必须包含抽样率限制"]
+}
+```
+
+- `actions` 长度必须为 1–3；缺字段、`effort` 不在 `{S,M,L}`、超长文本都判失败。
+- `rule_ids` 必须属于本次 `checks` 中 `status ∈ {fail, degraded}` 的规则集合（warn 也接受）；含未知 id 的动作整条丢弃；丢弃后为空 → 整体失败，走 fallback。
+- `summary` / `caveats` / 动作文本不得含 `http://`、`https://`、`sk-`、`AKIA` 等串，防复述密钥。
+- 调用参数：`temperature=0.2`、`max_tokens=600`、`timeout=20s`，总尝试 2 次（1 次重试）。固定 system prompt + JSON user，明确要求「只依据给定 findings，不得编造文件名或行号；不确定就少说」。
+
+### 规则 fallback
+
+无模型或模型失败时，按维度扣分从高到低取 Top 3，文案从 `RULE_ADVICE` 映射（每条规则一句 why + 一句 how + 默认 effort）；同维度取扣分最高的规则；没有扣分时给一条“保持当前接入流程”的保守动作。`source="rules_fallback"`，页面角标为灰色「未配置模型」或「模型失败，已回退」。
+
+### 测试与截图
+
+- `tests/test_advice.py` 覆盖：prompt 掩码、未知 rule_id 丢弃、actions 为空、无密钥、超时、坏 JSON、advice cache hit、页面 fallback 卡片。
+- 有模型 / 无模型 AI 卡截图分别在 `docs/screenshot-ai-model.png` 与 `docs/screenshot-ai-rules.png`；另有 375px 模型卡 `docs/screenshot-ai-model-375.png`。
+- 真实 AI 答错与修正记录见 `AI_USAGE.md`。
 
 ## 取数边界
 
-- 首次扫描固定 3 次 GitHub API 请求：默认分支 HEAD commit、仓库元信息、`git/trees/{commit_sha}?recursive=1`；缓存命中只发第 1 次 HEAD。不 clone、不扫 Git 历史、不下载任何文件内容、不调用 contents API。
-- trees 按 commit SHA 请求；仅当 SHA 返回 404/422 时回退默认分支重试一次，`source.tree_ref_fallback=true`，这是唯一允许的第 4 次请求。
+- 首次扫描固定 **2 次 GitHub API 请求**：仓库元信息、`git/trees/{commit_sha}?recursive=1`；HEAD 另走 `commits/{branch}.atom` 1 次，不计 API 配额。缓存命中只发 1 次 atom，不请求 API。不 clone、不扫 Git 历史、不下载任何文件内容、不调用 contents API。
+- trees 按 commit SHA 请求；仅当 SHA 返回 404/422 时回退默认分支重试一次，`source.tree_ref_fallback=true`，这是唯一允许的第 3 次 API 请求。
 - 不落盘、不解析 zip；项目目录不保留任何压缩包或解压产物。
 - 清单阶段只统计 `type=blob`，单一硬顶 `BLOB_CAP=20000`（仅防病态仓库）。不再有 2000 文件 / 50MB 闸门。
 - 触发 `BLOB_CAP` 时按优先级采样，不按路径字母序砍：
@@ -223,7 +291,7 @@ commit 不变 → 字节级复用；commit 变了 → key 自然不同，不需�
 | R09 | env-committed | secrets | critical | -10 | 是 | tree 命中 `.env` / `.env.*`（排除 `.env.example/.sample/.template/.dist`，大小写不敏感）；读前 4KB：密钥类 KEY 有非占位值 → critical（封顶 69），密钥类值全空/占位 → medium（-10，封顶 79）；不存在但 `.gitignore` 未包含 `.env` → low（提示）；`tests/testdata` 等目录中的 `.env` 视为夹具降级 low；evidence 只显示 `KEY=***`。密钥类 KEY 冻结表：`secret\|token\|password\|passwd\|pwd\|api[_-]?key\|access[_-]?key\|credential\|auth\|private`，按词边界匹配（`AUTHOR` 不算 `auth`） |
 | R10 | private-key | secrets | critical | -15 | 是 | 内容命中 `-----BEGIN … PRIVATE KEY-----` → critical（封顶 59）；tree 命中 `.pem/.key/.p12/.pfx/.jks/id_rsa*` 但内容不可读 → high（-15）；`tests/test/fixtures/examples/docs` 及测试文件降级 low |
 | R11 | secret-token | secrets | critical | -15 | 是 | 内容命中 OpenAI/Anthropic/AWS/阿里云/GitHub/Slack/Google 令牌、JWT、Bearer、带账密数据库 URL；占位值、重复字符 → low，文档 → info，测试/示例目录 → low；命中行属于规则/模式定义（路径含 `rules/` `patterns/`、文件名为 `gitleaks.toml` 或 `*rule*`，或同时含 `[ ] { } ( ) \| \ * + ?` 与 `regex/pattern/re.compile` 等关键字）→ info，不封顶；其余按封顶资格判 critical（封顶 59）或 high（-15，不封顶） |
-| R12 | license-missing | maintenance | low | -4 | 否 | 根目录无 `LICENSE` / `LICENCE` / `COPYING`（允许 `.md/.txt` 后缀）且 GitHub `license` 元信息可判定 → low 提示；许可证文件存在 → pass；`license` 元信息为 `null` / 空 / `NOASSERTION` → `n/a`，不猜 |
+| R12 | license-missing | maintenance | low | -3 | 否 | 根目录无 `LICENSE` / `LICENCE` / `COPYING`（允许 `.md/.txt` 后缀）且 GitHub `license` 元信息可判定 → low 提示；许可证文件存在 → pass；`license` 元信息为 `null` / 空 / `NOASSERTION` → `n/a`，不猜 |
 | R13 | stale-repo | maintenance | low | -3 | 否 | `pushed_at` 距 `scanned_at` > 365 天 → low 提示；≤365 天 pass；`pushed_at` 缺失/不可解析 → `n/a`，不猜 |
 | R14 | archived | maintenance | low | -3 | 否 | `archived=true` → low 提示；`false` → pass |
 
@@ -275,7 +343,7 @@ commit 不变 → 字节级复用；commit 变了 → key 自然不同，不需�
 - 占位判定（R11）：值含 `xxx / your / example / sample / demo / test / dummy / fake / placeholder / changeme / changethis / redacted / < / ${ / {{ / %s`，或去掉前缀后由同一字符重复构成 → low，不封顶。
 - 内容预取把 `.env*`、`.gitignore`、`.pem/.key/id_rsa*`、`*credential*/*secret*` 前移到普通抽样之前，保证 R09/R10 尽量拿到原文。
 
-## 评分模型（v3.1：权重与门槛冻结）
+## 评分模型（v3.2：权重与门槛冻结）
 
 评分口径是产品主张，公开接受质疑；代码在 `app/scoring.py`，所有数字只在这里定义一次。
 
@@ -308,7 +376,7 @@ commit 不变 → 字节级复用；commit 变了 → key 自然不同，不需�
 | R09 | secrets | -10 | 按 severity：`critical -30 / medium -10 / low -3 / info 0` |
 | R10 | secrets | -15 | 按 severity：`critical -30 / high -15 / low -3 / info 0` |
 | R11 | secrets | -15 | 按 severity：`critical -30 / high -15 / low -3 / info 0` |
-| R12 | maintenance | -4 | 按 `low` 实扣 -3（标称 -4 只出现在 `/api/rules`） |
+| R12 | maintenance | -3 | 按 `low` 实扣 -3 |
 | R13 | maintenance | -3 | 按 `low` 实扣 -3 |
 | R14 | maintenance | -3 | 按 `low` 实扣 -3 |
 
@@ -357,7 +425,7 @@ R09–R14 由 finding 的 `severity` 决定，不由规则各自随意定；R01�
 
 - 卡 1 结论：纯 CSS `conic-gradient` 分数环（无图表库）、等级、裁决、阻断项数（critical finding 数）、高危数（high finding 数）、内容抽样率；门槛区显示「已检查 / 已生效 / 未生效（原始分更低）」。
 - 卡 2 证据：五维横向条（得分/权重，点开可见该维度每一笔 `deductions`）、14 条检查矩阵（通过 / 提示 / 未通过 / 不适用 四色，悬停显示 basis）、风险表（critical → info 排序，含 rule_id、文件:行号、掩码证据、影响、修复建议；medium 以下默认折叠）。
-- 卡 3 建议：本步只放占位「AI 建议将在后续接入」，不伪造 AI 结论。
+- 卡 3 建议：有模型时显示「AI 接入建议」，角标含 model / 延迟 / tokens；无模型或模型失败时显示「接入建议（规则生成）」，灰角标分别标「未配置模型」或「模型失败，已回退」。动作按优先级列出 title / effort / why / how / rule_ids，caveats 默认折叠，底部固定一行「建议基于 X 条检测结果生成，抽样率 Y%，不代表全仓结论」。所有模型文本经 Jinja 自动转义，不渲染 HTML。
 - 页脚：commit SHA、扫描时间、引擎版本、`schema_version`、缓存状态（命中 / 新扫 / 陈旧）、缓存时间、文件数、内容抽样率、封顶原因、导出 JSON 按钮。导出内容来自同一 `InspectResponse`，与 `/api/inspect` 完全一致（含 `cache`）。
 - 陈旧缓存：顶部黄色警告条显示「上游限流，以下为 T 时间的缓存结果（commit Y），可能已过期」，报告不隐藏。
 - 375px 不横向溢出：三卡单列、风险表转为纵向卡片、矩阵单列；桌面为双列矩阵与标准表格。
@@ -366,7 +434,7 @@ R09–R14 由 finding 的 `severity` 决定，不由规则各自随意定；R01�
 
 
 
-- 默认匿名调用：60 次/时（GitHub 按来源 IP 计）。首次扫描固定 3 次 API 请求（HEAD + 元信息 + tree），缓存命中只发 1 次 HEAD；满配额约可覆盖 20 次首次扫描/时。
+- 默认匿名调用：60 次/时（GitHub 按来源 IP 计）。首次扫描 2 次 API 请求（元信息 + tree），HEAD atom 另计且不占 API 配额；缓存命中只发 1 次 atom。满配额约可覆盖 30 次首次扫描/时。
 - 可选：设置环境变量 `GITHUB_TOKEN`（公开仓库只读即可，无需额外 scope），配额提升到 5000 次/时。每次扫描读取一次，只放进 `Authorization: Bearer` 请求头；不写进代码、不出现在响应、不出现在日志。
 - 403/429 时读取 `X-RateLimit-Reset`（epoch 秒）并转为本地时间，返回：`GitHub 配额已耗尽，预计 HH:MM 恢复；本地可设置 GITHUB_TOKEN 提升到 5000 次/时`。响应头缺失时退回原通用提示。
 - 日志只记录请求方法与 URL，不记录请求头。
@@ -384,7 +452,7 @@ R09–R14 由 finding 的 `severity` 决定，不由规则各自随意定；R01�
 
 - Starlette 1.10.0 对 `httpx` TestClient 的升级提示只出现在 pytest；生产路径不用 TestClient，`pytest.ini` 与 `tests/conftest.py` 按依赖版本原因过滤，不修改业务代码。
 - 429 两分支已用真实耗尽匿名配额复现：有缓存返回 200 + `stale` + `STALE_CACHE`，无缓存返回 429 + `retry_after`；本机未设置 `GITHUB_TOKEN` 时仍建议先等配额重置再批量扫描。
-- 匿名配额 60 次/时；首次扫描 3 次 API 请求，缓存命中 1 次 HEAD，约 20 个首次扫描/时；建议本地设置 `GITHUB_TOKEN` 提升到 5000 次/时。
+- 匿名配额 60 次/时；首次扫描 2 次 API 请求，缓存命中 0 次 API + 1 次 atom，约 30 个首次扫描/时；建议本地设置 `GITHUB_TOKEN` 提升到 5000 次/时。
 - 密钥规则受抽样率约束：抽样 <50% 且命中文件不在高风险路径时只作 high 提示，不封顶，不能据此断言全仓无泄露。
 - R09 只解析 `.env` 前 4KB 的 `KEY=VALUE`；多行值、注释中的值不参与判定。
 - 占位词表是启发式，宁可漏报也不误报：真实值若恰好含 `test` / `example` 等词会被降级为 low。
@@ -424,7 +492,7 @@ $env:REPOGATE_GOLDEN_NETWORK="1"; .venv\Scripts\python.exe -m pytest tests/test_
 
 ## 当前明确不做
 
-AI 建议卡（第 7 步）、webhook / 定时重扫、分布式缓存、多用户隔离、数据库、内容全量下载、登录、历史与组织看板、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅与第 6 步指定的页脚字段外不展示其它 `stats/timing`，验收以 `/api/inspect` JSON 为准。
+AI 建议的多轮对话、RAG、向量库、自动改代码、流式输出、webhook / 定时重扫、分布式缓存、多用户隔离、数据库、内容全量下载、登录、历史与组织看板、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅与第 6 步指定的页脚字段外不展示其它 `stats/timing`，验收以 `/api/inspect` JSON 为准。
 
 ## 测试
 

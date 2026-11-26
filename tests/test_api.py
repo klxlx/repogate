@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import TestClient as StarletteTestClient
@@ -205,6 +207,30 @@ def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
     finding_rules = {finding["rule_id"] for finding in body["findings"]}
     assert fail_rules <= finding_rules
     assert not (clean_rules & finding_rules)
+
+
+def test_api_stats_windows_script_count_matches_r06_basis(monkeypatch) -> None:
+    tree = {
+        "sha": "root",
+        "truncated": False,
+        "tree": [
+            {"path": "README.md", "type": "blob", "size": 6, "sha": "x"},
+            {"path": "tools/a.ps1", "type": "blob", "size": 5, "sha": "x"},
+            {"path": "node_modules/b.bat", "type": "blob", "size": 5, "sha": "x"},
+        ],
+    }
+    bundle = dataclasses.replace(fake_bundle(), tree=tree)
+
+    async def fake_fetch(_: str) -> RepoBundle:
+        return bundle
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
+
+    r06 = next(check for check in body["checks"] if check["rule_id"] == "R06")
+    assert body["stats"]["windows_script_count"] == 1
+    assert r06["basis"].startswith("共 1 个 Windows 脚本")
 
 
 def test_api_passes_source_flags(monkeypatch) -> None:

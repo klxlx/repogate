@@ -79,6 +79,7 @@ async def _inspect(repo_url: str) -> InspectResponse:
 
     snapshot = build_snapshot(bundle, owner, repo)
     snapshot.text_total = scan.scope.files_scanned
+    snapshot.raw_windows_scripts = scan.raw_windows_script_count
     content = await fetch_contents(
         owner, repo, bundle.commit_sha, plan_content_paths(snapshot)
     )

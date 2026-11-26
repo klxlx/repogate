@@ -140,7 +140,8 @@ def test_counts_windows_scripts_across_whole_tree() -> None:
 
     assert result.scope.files_scanned == 2
     assert result.scope.files_skipped == 2
-    assert result.stats.windows_script_count == 3
+    assert result.stats.windows_script_count == 1
+    assert result.raw_windows_script_count == 3
     assert [item.path for item in result.files] == ["README.md", "tools/a.ps1"]
     assert_identities(result)
 

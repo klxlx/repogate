@@ -73,6 +73,16 @@ def test_r06_share_below_half_is_not_high() -> None:
     assert "6/16" in outcome.basis
 
 
+def test_r06_basis_adds_raw_tree_footnote() -> None:
+    state = snapshot({"w%d.ps1" % index: 1 for index in range(6)})
+    state.raw_windows_scripts = 8
+
+    outcome = detect_windows_scripts(state)
+
+    assert "全树 8" in outcome.basis
+    assert "其中 2 个" in outcome.basis
+
+
 # ---------- R07 ----------
 
 
@@ -121,13 +131,13 @@ def test_r08_fixture_severity_matrix() -> None:
     by_severity: dict[str, list] = {"high": [], "low": [], "info": []}
     for finding in findings:
         by_severity[finding.severity].append(finding)
-    assert len(by_severity["high"]) == 2
-    assert len(by_severity["low"]) == 2
-    assert len(by_severity["info"]) == 1
+    assert len(by_severity["high"]) == 1
+    assert len(by_severity["low"]) == 4
+    assert len(by_severity["info"]) == 0
+    assert {finding.file for finding in by_severity["high"]} == {"unc.py"}
     hit_files = {finding.file for finding in findings}
     assert "url.py" not in hit_files
     assert "route.py" not in hit_files
-    assert outcome.penalty == 4
 
 
 def test_r08_merges_hits_in_one_file() -> None:
@@ -144,7 +154,7 @@ def test_r08_merges_hits_in_one_file() -> None:
 
 def test_r08_penalty_is_capped() -> None:
     contents = {
-        "f%d.py" % index: 'X = "C:\\\\Users\\\\alice\\\\data%d"' % index
+        "f%d.py" % index: 'X = "C:\\\\Data\\\\file%d"' % index
         for index in range(6)
     }
     paths = {path: len(text) for path, text in contents.items()}
@@ -154,6 +164,43 @@ def test_r08_penalty_is_capped() -> None:
     findings = [outcome.finding] + outcome.extra_findings
     assert len(findings) == 6
     assert outcome.penalty == 10
+
+
+def test_r08_drive_escape_fixture() -> None:
+    text = fixture("escape.py")
+    outcome = detect_hardcoded_path(
+        snapshot({"escape.py": len(text)}, {"escape.py": text}, text_total=1)
+    )
+
+    findings = [outcome.finding] + outcome.extra_findings
+    assert len(findings) == 1
+    assert findings[0].severity == "high"
+    assert findings[0].hit_count == 2
+    evidence = findings[0].evidence_masked
+    assert "c:\\Users\\real" in evidence
+    assert "C:\\NuGetPackages" in evidence
+    assert "s:\\next" not in evidence
+    assert "e:\\temp" not in evidence
+
+
+def test_r08_degrades_when_sampling_low_and_nothing_hit() -> None:
+    outcome = detect_hardcoded_path(
+        snapshot({"clean.py": 10}, {"clean.py": "x = 1\n"}, text_total=100)
+    )
+
+    assert outcome.status == "degraded"
+    assert "抽样率过低" in outcome.basis
+    assert outcome.finding is None
+
+
+def test_r08_low_sampling_hit_uses_medium_confidence() -> None:
+    text = 'X = "C:\\\\Data\\\\file.txt"\n'
+    outcome = detect_hardcoded_path(snapshot({"a.py": 50}, {"a.py": text}, text_total=100))
+
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert outcome.finding.confidence == "medium"
+    assert "非全仓结论" in outcome.finding.impact
 
 
 def test_r08_ignores_escape_sequences_and_url_and_route() -> None:

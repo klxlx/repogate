@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from ..snapshot import Snapshot
 from .base import Rule, RuleOutcome, degraded, failed, make_finding, na, passed
+
 WIN_EXTENSIONS = frozenset({".bat", ".cmd", ".ps1", ".vbs"})
 SHELL_EXTENSIONS = frozenset({".sh", ".bash"})
 DOC_EXTENSIONS = frozenset({".md", ".rst", ".txt"})
@@ -17,17 +18,25 @@ LOW_USERNAMES = frozenset(
     {
         "username", "user", "yourname", "name", "xxx", "example",
         "runner", "runneradmin", "vagrant", "ubuntu",
+        "someone", "alice", "bob", "jane", "john", "doe", "dev", "developer", "test",
     }
+)
+INFO_DIR_PREFIXES = ("tests/", "test/", "fixtures/", "examples/", "docs/", "samples/")
+PLACEHOLDER_SEGMENTS = frozenset(
+    {"foo", "bar", "baz", "example", "sample", "demo", "test", "your-path", "path-to"}
 )
 
 URL_RE = re.compile(r'(?:https?|ftp|file)://[^\s"\']+')
-# 只认大写盘符，且要求前面不是单词字符：排除 "s:\n" 这类转义序列误报
-DRIVE_RE = re.compile(r'(?<![A-Za-z0-9_])[A-Z]:\\[^\s"\'<>|*?]+')
+# 大小写盘符 + 前边界 + 转义前瞻（只排除 n/t/r 三种转义前缀，避免误伤 C:\foo）
+DRIVE_RE = re.compile(
+    r'(?<![A-Za-z0-9_])[A-Za-z]:\\(?!(?:n|t|r))'
+    r'(?:[^\\\s"\'<>|*?]+\\)*[^\\\s"\'<>|*?]+'
+)
 UNC_RE = re.compile(r'\\\\[A-Za-z0-9._-]+\\[^\s"\']+')
 HOME_RE = re.compile(r'/(?:Users|home)/([A-Za-z0-9._-]+)(?:/[^\s"\']*)?')
+USER_IN_PATH_RE = re.compile(r'(?i)[\\/](?:Users|home)[\\/]([A-Za-z0-9._-]+)')
 MOUNT_RE = re.compile(r'/mnt/[a-z]/[^\s"\']*')
 PLACEHOLDER_RE = re.compile(r"%USERPROFILE%|\$HOME|\$\{HOME\}|<[^<>\s]+>")
-_ESCAPE_TAIL_RE = re.compile(r"\\(?:[nrtbfv0xu]\\)*[nrtbfv0xu]$")
 
 PATH_PATTERNS = (("盘符", DRIVE_RE), ("UNC", UNC_RE), ("用户目录", HOME_RE), ("容器挂载", MOUNT_RE))
 SEVERITY_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3}
@@ -71,6 +80,10 @@ def detect_windows_scripts(snapshot: Snapshot) -> RuleOutcome:
         if group
     ) or "无"
     basis = f"共 {count} 个 Windows 脚本（{distribution}），占脚本总量 {count}/{total}"
+
+    raw = snapshot.raw_windows_scripts
+    if raw > count:
+        basis += f"；全树 {raw}，其中 {raw - count} 个位于 build/ 等排除目录"
 
     if count == 0:
         return passed(R06, basis)
@@ -162,14 +175,24 @@ class _Hit:
     severity: str
 
 
+def _has_placeholder_segment(matched: str) -> bool:
+    body = re.sub(r"^[A-Za-z]:", "", matched)
+    segments = re.split(r"[\\/]+", body)
+    return any(segment.lower() in PLACEHOLDER_SEGMENTS for segment in segments if segment)
+
+
 def _classify(path: str, line: str, matched: str) -> str:
     if PLACEHOLDER_RE.search(line):
         return "low"
-    home = HOME_RE.search(matched)
+    home = USER_IN_PATH_RE.search(matched)
     if home and home.group(1).lower() in LOW_USERNAMES:
         return "low"
     if path.startswith(".github/workflows/") and "/home/runner/" in matched:
         return "low"
+    if _has_placeholder_segment(matched):
+        return "low"
+    if path.startswith(INFO_DIR_PREFIXES):
+        return "info"
     if _ext(path) in DOC_EXTENSIONS:
         return "info"
     return "high"
@@ -183,15 +206,18 @@ def _scan_file(path: str, text: str) -> list[_Hit]:
             for match in pattern.finditer(line):
                 if len(match.group(0)) <= 2:
                     continue
-                if pattern is DRIVE_RE and _ESCAPE_TAIL_RE.search(match.group(0)):
-                    continue
-                hits.append(_Hit(lineno, match.group(0), _classify(path, line, match.group(0))))
+                hits.append(
+                    _Hit(lineno, match.group(0), _classify(path, line, match.group(0)))
+                )
     return hits
 
 
 def detect_hardcoded_path(snapshot: Snapshot) -> RuleOutcome:
     scanned = len(snapshot.contents)
     total = snapshot.text_total or scanned or 1
+    ratio = scanned / total if total else 1.0
+    pct = f"{ratio * 100:.2f}%"
+    prefix = f"抽样 {scanned}/{total}（{pct}）"
 
     if scanned == 0:
         return degraded(R08, "未读取到任何文本内容，无法判定硬编码路径")
@@ -203,7 +229,11 @@ def detect_hardcoded_path(snapshot: Snapshot) -> RuleOutcome:
             per_file.append((path, hits))
 
     if not per_file:
-        return passed(R08, f"扫描 {scanned}/{total} 个文本文件，未命中硬编码路径")
+        if ratio < 0.2:
+            return degraded(
+                R08, f"{prefix} 抽样率过低（{pct}），未发现不代表不存在"
+            )
+        return passed(R08, f"{prefix}，未命中硬编码路径")
 
     findings = []
     high_files = 0
@@ -211,26 +241,29 @@ def detect_hardcoded_path(snapshot: Snapshot) -> RuleOutcome:
     info_files = 0
     for path, hits in per_file:
         severity = max((hit.severity for hit in hits), key=lambda item: SEVERITY_RANK[item])
-        confidence = "low" if severity in ("low", "info") else "high"
+        confidence = "medium" if severity in ("low", "info") or ratio < 0.2 else "high"
         if severity == "high":
             high_files += 1
         elif severity == "low":
             low_files += 1
         else:
             info_files += 1
+
         preview = "；".join(f"{path}:{hit.line} {hit.text}" for hit in hits[:3])
+        impact = (
+            "路径绑定本机环境，迁移到容器或 CI 会直接失败"
+            if severity == "high"
+            else "路径是示例/占位符或文档示例，风险较低"
+        )
+        if ratio < 0.2:
+            impact += "；仅基于抽样文件，非全仓结论"
         finding = make_finding(
             R08,
             title=f"硬编码路径（{severity}）",
             evidence=(
-                f"扫描 {scanned}/{total} 个文本文件，{path} 命中 {len(hits)} 处；"
-                f"前 3 处：{preview}"
+                f"{prefix}，{path} 命中 {len(hits)} 处；前 3 处：{preview}"
             ),
-            impact=(
-                "路径绑定本机环境，迁移到容器或 CI 会直接失败"
-                if severity == "high"
-                else "路径是示例/占位符或文档示例，风险较低"
-            ),
+            impact=impact,
             fix="改为相对路径、环境变量或可配置参数",
             file=path,
             line=hits[0].line,
@@ -241,9 +274,10 @@ def detect_hardcoded_path(snapshot: Snapshot) -> RuleOutcome:
         )
         findings.append(finding)
 
+    # TODO(第 5 步): 抽样率 <20% 时 R08 扣分减半
     penalty = min(2 * high_files, 10)
     basis = (
-        f"扫描 {scanned}/{total} 个文本文件，命中 {len(findings)} 个文件"
+        f"{prefix}，命中 {len(findings)} 个文件"
         f"（high {high_files} / low {low_files} / info {info_files}）"
     )
     return RuleOutcome(

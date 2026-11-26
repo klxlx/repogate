@@ -69,6 +69,7 @@ class TreeScanResult:
     scope: ScopeInfo
     stats: StatsInfo
     files: list[FileEntry]
+    raw_windows_script_count: int = 0
 
 
 def _extension(path: str) -> str:
@@ -135,13 +136,18 @@ def _size(item: dict) -> int:
     return int(item.get("size") or 0)
 
 
-def _count_windows_scripts(entries: list[dict]) -> int:
+def _count_windows_scripts(entries: list[dict], *, exclude_dirs: bool = True) -> int:
+    """纳入分析范围口径：排除目录已剔除；exclude_dirs=False 时统计全树（仅用于 basis 注脚）。"""
     count = 0
     for item in entries:
         if item.get("type") != "blob":
             continue
         path = item.get("path")
-        if isinstance(path, str) and _extension(path) in WINDOWS_SCRIPT_EXTENSIONS:
+        if not isinstance(path, str):
+            continue
+        if exclude_dirs and is_excluded_dir(path):
+            continue
+        if _extension(path) in WINDOWS_SCRIPT_EXTENSIONS:
             count += 1
     return count
 
@@ -208,7 +214,7 @@ def scan_tree(
     )
     stats = StatsInfo(
         text_files=len(analyzable),
-        windows_script_count=_count_windows_scripts(entries),
+        windows_script_count=_count_windows_scripts(listed),
         total_blobs_in_tree=total_blobs,
         listed_blobs=len(listed),
         bytes_total_listed=sum(_size(item) for item in listed),
@@ -220,4 +226,9 @@ def scan_tree(
         for item in analyzable
     ]
     display_files.sort(key=lambda item: item.path)
-    return TreeScanResult(scope=scope, stats=stats, files=display_files[:50])
+    return TreeScanResult(
+        scope=scope,
+        stats=stats,
+        files=display_files[:50],
+        raw_windows_script_count=_count_windows_scripts(entries, exclude_dirs=False),
+    )

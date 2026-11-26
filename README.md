@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖/可移植性缺陷。当前完成**第 3 步（v1.8）：规则引擎 R01–R08 + 平台可移植规则**，尚未实现评分、三卡报告、密钥规则。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖/可移植性缺陷。当前完成**第 3 步（v1.9）：规则引擎 R01–R08 + 平台可移植规则**，尚未实现评分、三卡报告、密钥规则。
 
 ## 快速开始（Windows）
 
@@ -56,7 +56,7 @@ python3.13 -m venv .venv
     {"rule_id": "R05", "status": "pass", "basis": "根目录 Makefile", "file": "Makefile", "line": 0},
     {"rule_id": "R06", "status": "fail", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1", "file": "docs/make.bat", "line": 0},
     {"rule_id": "R07", "status": "pass", "basis": "存在跨平台入口：Makefile（Makefile）", "file": "Makefile", "line": 0},
-    {"rule_id": "R08", "status": "fail", "basis": "扫描 120/123 个文本文件，命中 2 个文件（high 2 / low 0 / info 0）", "file": "src/requests/utils.py", "line": 487}
+    {"rule_id": "R08", "status": "fail", "basis": "抽样 120/123（97.56%），命中 2 个文件（high 2 / low 0 / info 0）", "file": "src/requests/utils.py", "line": 487}
   ]
 }
 ```
@@ -112,7 +112,7 @@ python3.13 -m venv .venv
 - 恒等式（代码内 assert，单测覆盖）：
   - `files_scanned + files_skipped == listed_blobs`
   - `listed_blobs + stats.unlisted_blobs == stats.total_blobs_in_tree`
-- `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 是全仓库 blob 中 `.bat/.cmd/.ps1/.vbs` 的实际数量，不受清单限额影响。
+- `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 与 R06 同源，只统计**纳入分析范围**（排除目录段已剔除）的 `.bat/.cmd/.ps1/.vbs`。全树原始数量另由 `snapshot.raw_windows_scripts` 提供，仅用于 R06 basis 注脚，不进 stats。Windows 脚本数一律按纳入分析范围统计。
 - `stats.path_scan_files` / `stats.path_scan_bytes` 为实际读取到的文本文件数与字节；`stats.content_total_text_files` 为可读文本文件总数（= `files_scanned`）。
 - `files` 只返回 `files_scanned` 集合中按路径排序的前 50 条。
 - 排除目录段（任意一段命中即整条跳过）：`.git` / `node_modules` / `vendor` / `dist` / `build` / `.venv` / `venv` / `__pycache__` / `.pytest_cache` / `.idea` / `.vs` / `obj`。
@@ -130,9 +130,9 @@ python3.13 -m venv .venv
 | R03 | deps-missing | deps | high | -8 | 否 | 最高可用层级无任何依赖清单（含 `.sln/.slnx` / `.csproj` / `vcpkg.json` / `CMakeLists.txt`） |
 | R04 | deps-unpinned | deps | low | -2 | 是 | 无可解析清单（`package.json` / `requirements.txt` / `pyproject.toml`）时 `n/a`；有清单时无 lockfile 且浮动版本 >50% 判 fail |
 | R05 | start-missing | deps | medium | -4 | 是 | 最高可用层级无 `package.json:scripts.start/dev/serve/build/compile`、`Makefile`、`Dockerfile`、`docker-compose*`、`*.sln/.slnx`；根无 `CMakeLists.txt` / `build.ps1` / `build.bat` / `build.sh` / `*.csproj` |
-| R06 | windows-scripts | portability | high | -6 | 否 | 统计 `.bat/.cmd/.ps1/.vbs`；0 个 pass，1 个 info（扣 0，保留 finding），2–4 个 medium（-3），≥5 个 high（-6）；share = win/(win+.sh+.bash) < 0.5 时最高只判 medium |
+| R06 | windows-scripts | portability | high | -6 | 否 | 统计纳入分析范围的 `.bat/.cmd/.ps1/.vbs`（与 `stats.windows_script_count` 同源）；0 个 pass，1 个 info（扣 0，保留 finding），2–4 个 medium（-3），≥5 个 high（-6）；share = win/(win+.sh+.bash) < 0.5 时最高只判 medium；basis 可带注脚「全树 N，其中 M 个位于 build/ 等排除目录」 |
 | R07 | no-crossplatform | portability | medium | -4 | 否 | 无 Windows 脚本 → n/a；有 Windows 脚本且存在 `.sh/.bash/Makefile/Dockerfile/docker-compose*.yml` → pass；全无 → fail（-4） |
-| R08 | hardcoded-path | portability | high | -10 | 是 | 扫 `path_scan_files` 文本，识别盘符 / UNC / `/Users|home/<user>` / `/mnt/<x>`；占位符、示例用户名、CI runner、文档示例降级 low/info；同文件合并，high 每文件 -2，单规则封顶 -10 |
+| R08 | hardcoded-path | portability | high | -10 | 是 | 扫 `path_scan_files` 文本，识别盘符 / UNC / `/Users|home/<user>` / `/mnt/<x>`；占位符、示例用户名、CI runner、占位路径段、文档降级 low，`tests/test/fixtures/examples/docs/samples` 目录降级 info；同文件合并，high 每文件 -2，单规则封顶 -10；basis 必含「抽样 X/Y（Z%）」，Z<20% 时 fail 记 medium confidence 并声明「仅基于抽样文件，非全仓结论」，零命中记 degraded |
 
 - 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
 - 事实型规则（缺文件）`file=""`、`line=0`，evidence 固定写「未找到 X（已检查最高层级：根目录与一层普通子目录）」。
@@ -184,7 +184,8 @@ python3.13 -m venv .venv
 
 - 只读 `https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}`，不调用 contents API。
 - 配额：≤120 个文件、≤8MB 总量、并发 6、单文件超时 15s、单文件 ≤512KB；超时与 5xx 各重试 1 次，404 不重试。预取顺序按证据层级：README 取最高层，清单取最高层同层全部，弱目录不取，预算先给根目录文件；其余文本按 P1–P5（配置 → 脚本 → 说明/清单 → 源码 → 其他）排序补齐。
-- 抽样比例：`stats.path_scan_files / stats.content_total_text_files`，报告与页面不得隐藏；`path_scan_bytes` 为实际读取字节。
+- 抽样比例：`stats.path_scan_files / stats.content_total_text_files`，报告与页面不得隐藏；`path_scan_bytes` 为实际读取字节。R08 的 basis 必须写明「抽样 X/Y（Z%）」；Z<20% 时不允许给出干净结论：有命中记 fail + `confidence=medium`，impact 追加「仅基于抽样文件，非全仓结论」，零命中记 degraded「抽样率过低（Z%），未发现不代表不存在」。
+- R08 豁免分层：路径位于 `tests/` `test/` `fixtures/` `examples/` `docs/` `samples/` → info；路径段精确命中 `foo` `bar` `baz` `example` `sample` `demo` `test` `your-path` `path-to` → low；用户名命中占位表（含 `someone` `alice` `bob` `jane` `john` `doe` `dev` `developer` `test`）→ low。任一条生效时 `confidence=medium`，evidence 保留原值不掩码路径。
 - 请求失败、超时、超配额：该文件标为不可用；依赖内容的规则**不得输出肯定结论**，一律 `degraded` + `confidence=low`，说明「缺 X 文件内容，结论不完整」。
 - `stats.content_requests` / `stats.content_bytes` / `stats.content_failed` / `stats.content_files_available` 单独统计 raw 拉取；`request_count` 仍只算 api.github.com。
 

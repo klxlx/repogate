@@ -23,8 +23,15 @@ def test_r12_passes_with_root_license() -> None:
     assert outcome.finding is None
 
 
-def test_r12_missing_is_low_hint_not_fail() -> None:
+def test_r12_missing_metadata_is_na() -> None:
     outcome = detect_license_missing(snapshot({"README.md": 10}))
+    assert outcome.status == "n/a"
+    assert outcome.finding is None
+    assert "元信息" in outcome.basis
+
+
+def test_r12_missing_file_with_known_license_is_low_hint() -> None:
+    outcome = detect_license_missing(snapshot({"README.md": 10}, license="MIT"))
     assert outcome.status == "pass"
     assert outcome.extra_findings
     assert outcome.extra_findings[0].severity == "low"
@@ -50,9 +57,10 @@ def test_r13_recent_passes() -> None:
     assert outcome.finding is None
 
 
-def test_r13_missing_is_degraded() -> None:
+def test_r13_missing_is_na() -> None:
     outcome = detect_stale_repo(snapshot(pushed_at=None))
-    assert outcome.status == "degraded"
+    assert outcome.status == "n/a"
+    assert "pushed_at" in outcome.basis
 
 
 def test_r14_archived_is_low_hint() -> None:

@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "empty_repo_100_a",
+      "sampling_ratio": 0.8,
+      "findings": [],
+      "expected": {
+        "total": 100,
+        "raw_total": 100,
+        "grade": "A",
+        "caps": [],
+        "deductions": []
+      }
+    },
+    {
+      "name": "single_high_r06",
+      "sampling_ratio": 0.8,
+      "findings": [
+        {"rule_id": "R06", "dimension": "portability", "severity": "high", "file": "tools/a.ps1", "cap_eligible": false}
+      ],
+      "expected": {
+        "total": 94,
+        "raw_total": 94,
+        "grade": "A",
+        "caps": [],
+        "deductions": [{"rule_id": "R06", "points": -6, "file": "tools/a.ps1"}]
+      }
+    },
+    {
+      "name": "r09_critical_cap_69_c",
+      "sampling_ratio": 0.8,
+      "findings": [
+        {"rule_id": "R09", "dimension": "secrets", "severity": "critical", "file": ".env", "cap_eligible": true}
+      ],
+      "expected": {
+        "total": 69,
+        "raw_total": 70,
+        "grade": "C",
+        "caps": [{"type": "env_committed", "limit": 69}],
+        "deductions": [{"rule_id": "R09", "points": -30, "file": ".env"}]
+      }
+    },
+    {
+      "name": "two_critical_r10_r11_cap_59_d",
+      "sampling_ratio": 0.8,
+      "findings": [
+        {"rule_id": "R10", "dimension": "secrets", "severity": "critical", "file": "id_rsa", "cap_eligible": true},
+        {"rule_id": "R11", "dimension": "secrets", "severity": "critical", "file": "config.py", "cap_eligible": true}
+      ],
+      "expected": {
+        "total": 59,
+        "raw_total": 70,
+        "grade": "D",
+        "caps": [{"type": "private_key", "limit": 59}, {"type": "secret_token", "limit": 59}],
+        "deductions": [
+          {"rule_id": "R10", "points": -30, "file": "id_rsa"},
+          {"rule_id": "R11", "points": -30, "file": "config.py"}
+        ]
+      }
+    },
+    {
+      "name": "r08_sampling_half",
+      "sampling_ratio": 0.05,
+      "findings": [
+        {"rule_id": "R08", "dimension": "portability", "severity": "high", "file": "src/a.py", "cap_eligible": false}
+      ],
+      "expected": {
+        "total": 99,
+        "raw_total": 99,
+        "grade": "A",
+        "caps": [],
+        "deductions": [{"rule_id": "R08", "points": -1, "file": "src/a.py"}]
+      }
+    },
+    {
+      "name": "docs_deps_8_cap_69_c",
+      "sampling_ratio": 0.8,
+      "findings": [
+        {"rule_id": "R02", "dimension": "docs", "severity": "medium", "file": "README.md", "cap_eligible": false},
+        {"rule_id": "R05", "dimension": "deps", "severity": "medium", "file": "Makefile", "cap_eligible": false}
+      ],
+      "expected": {
+        "total": 69,
+        "raw_total": 92,
+        "grade": "C",
+        "caps": [{"type": "docs_deps", "limit": 69}],
+        "deductions": [
+          {"rule_id": "R02", "points": -4, "file": "README.md"},
+          {"rule_id": "R05", "points": -4, "file": "Makefile"}
+        ]
+      }
+    },
+    {
+      "name": "docs_deps_12_cap_59_d",
+      "sampling_ratio": 0.8,
+      "findings": [
+        {"rule_id": "R02", "dimension": "docs", "severity": "medium", "file": "README.md", "cap_eligible": false},
+        {"rule_id": "R03", "dimension": "deps", "severity": "high", "file": "", "cap_eligible": false}
+      ],
+      "expected": {
+        "total": 59,
+        "raw_total": 88,
+        "grade": "D",
+        "caps": [{"type": "docs_deps", "limit": 59}],
+        "deductions": [
+          {"rule_id": "R03", "points": -8, "file": ""},
+          {"rule_id": "R02", "points": -4, "file": "README.md"}
+        ]
+      }
+    },
+    {
+      "name": "r09_medium_cap_79_b",
+      "sampling_ratio": 0.8,
+      "findings": [
+        {"rule_id": "R09", "dimension": "secrets", "severity": "medium", "file": ".env", "cap_eligible": false}
+      ],
+      "expected": {
+        "total": 79,
+        "raw_total": 90,
+        "grade": "B",
+        "caps": [{"type": "env_committed_placeholder", "limit": 79}],
+        "deductions": [{"rule_id": "R09", "points": -10, "file": ".env"}]
+      }
+    }
+  ]
+}

@@ -1,4 +1,9 @@
-"""GitHub 取数：严格 3 次 API 调用（meta + commit + trees），不下载任何文件内容。"""
+"""GitHub 取数：正常路径严格 3 次 API 调用（HEAD + meta + trees）。
+
+v3.1 拆成两步：
+- resolve_head：只解析默认分支 HEAD（1 次 `commits/HEAD`），用于命中 commit 缓存；
+- fetch_repo_bundle：缓存未命中时补 meta 并按 commit SHA 拉文件树。
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -34,11 +39,45 @@ RETRY_DELAYS_S = (1.0, 3.0)
 TREE_SLOW_MS = 45000  # 超过即标记 tree_slow，页面提示「超大仓库」
 TREE_HARD_TIMEOUT_MS = 90000  # 硬超时：90 秒仍未返回才报 TIMEOUT
 TREE_READ_TIMEOUT_S = 90.0
-USER_AGENT = "RepoGate/0.1 (repository intake inspection)"
+USER_AGENT = "RepoGate/3.1 (repository intake inspection)"
+DEFAULT_TIMEOUT = httpx.Timeout(
+    connect=10.0, read=TREE_READ_TIMEOUT_S, write=30.0, pool=10.0
+)
+
+_client: httpx.AsyncClient | None = None
+
+
+async def get_client() -> httpx.AsyncClient:
+    """复用连接池，避免每次请求重做 TLS 握手；进程退出时由 lifespan 关闭。"""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
+    return _client
+
+
+async def close_client() -> None:
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
 
 _OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+@dataclass
+class RepoHead:
+    """默认分支 HEAD 的轻量解析结果；缓存判断只需要它。"""
+
+    owner: str
+    repo: str
+    commit_sha: str
+    commit: dict
+    repo_meta: dict | None = None
+    ref: str = ""
+    request_count: int = 1
+    timing: TimingInfo = field(default_factory=TimingInfo)
 
 
 @dataclass
@@ -51,6 +90,9 @@ class RepoBundle:
     tree_truncated_by_github: bool
     request_count: int
     timing: TimingInfo
+    commit: dict = field(default_factory=dict)
+    owner: str = ""
+    repo_name: str = ""
 
 
 def parse_repo_url(raw: str) -> tuple[str, str]:
@@ -82,7 +124,7 @@ def parse_repo_url(raw: str) -> tuple[str, str]:
 
 
 class GitHubClient:
-    """每实例一次扫描；正常路径 3 次请求，tree 回退是唯一允许的第 4 次。"""
+    """每实例一次请求阶段；正常单仓库总计 3 次。"""
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
@@ -116,7 +158,8 @@ class GitHubClient:
         if status == 404:
             raise not_found()
         if status in (403, 429):
-            raise rate_limited(_reset_hhmm(headers))
+            reset_hhmm, retry_after = _rate_info(headers)
+            raise rate_limited(reset_hhmm, retry_after)
         if status >= 400:
             raise upstream(f"GitHub 返回 HTTP {status}")
 
@@ -162,7 +205,9 @@ class GitHubClient:
 
         raise fetch_failed("网络请求重试耗尽")
 
-    async def _get_json(self, url: str, *, allow_missing: bool = False, extra: bool = False) -> dict | None:
+    async def _get_json(
+        self, url: str, *, allow_missing: bool = False, extra: bool = False
+    ) -> dict | None:
         self._begin_request("GET", url, extra=extra)
         try:
             response, attempts = await self._send(url)
@@ -195,7 +240,9 @@ class GitHubClient:
         assert payload is not None
         return payload
 
-    async def get_tree(self, owner: str, repo: str, commit_sha: str, branch: str) -> tuple[dict, bool]:
+    async def get_tree(
+        self, owner: str, repo: str, commit_sha: str, branch: str
+    ) -> tuple[dict, bool]:
         """按 commit SHA 取树；404/422 时回退分支名，最多一次。"""
         base = f"{GITHUB_API}/repos/{quote(owner)}/{quote(repo)}/git/trees"
         tree = await self._get_json(
@@ -212,19 +259,29 @@ class GitHubClient:
         return tree, True
 
 
-def _reset_hhmm(headers: httpx.Headers) -> str | None:
-    """把 X-RateLimit-Reset（epoch 秒）转成本地 HH:MM；解析失败就不带恢复时间。"""
+def _rate_info(headers: httpx.Headers) -> tuple[str | None, int | None]:
+    """X-RateLimit-Reset（epoch 秒）→（本地 HH:MM, 剩余秒数）。"""
     raw = headers.get("x-ratelimit-reset")
-    if not raw:
-        return None
-    try:
-        timestamp = int(raw)
-    except (TypeError, ValueError):
-        return None
-    try:
-        return datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M")
-    except (OverflowError, OSError, ValueError):
-        return None
+    retry_after: int | None = None
+    reset_hhmm: str | None = None
+
+    if raw:
+        try:
+            timestamp = int(raw)
+            retry_after = max(0, int(timestamp - time.time()))
+            reset_hhmm = datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M")
+        except (TypeError, ValueError, OverflowError, OSError):
+            retry_after = None
+
+    if retry_after is None:
+        retry_header = headers.get("retry-after")
+        if retry_header:
+            try:
+                retry_after = max(0, int(retry_header))
+            except (TypeError, ValueError):
+                retry_after = None
+
+    return reset_hhmm, retry_after
 
 
 def _normalize_repo(meta: dict) -> dict:
@@ -239,73 +296,112 @@ def _normalize_repo(meta: dict) -> dict:
     }
 
 
+def _normalize_commit(payload: dict) -> dict:
+    """把 GitHub commits 响应压成契约里的 commit{sha,message,author,date}。"""
+    inner = payload.get("commit") if isinstance(payload.get("commit"), dict) else {}
+    author = inner.get("author") if isinstance(inner.get("author"), dict) else {}
+    committer = inner.get("committer") if isinstance(inner.get("committer"), dict) else {}
+    login = payload.get("author") if isinstance(payload.get("author"), dict) else {}
+    return {
+        "sha": payload.get("sha") or "",
+        "message": inner.get("message") or payload.get("message") or "",
+        "author": author.get("name") or login.get("login") or "",
+        "date": author.get("date") or committer.get("date") or "",
+    }
+
+
 def _elapsed_ms(started_at: float) -> int:
     return int(round((time.monotonic() - started_at) * 1000))
 
 
-async def fetch_repo_bundle(raw_url: str) -> RepoBundle:
+async def resolve_head(raw_url: str) -> RepoHead:
+    """只解析默认分支 HEAD：1 次 `commits/HEAD`，不拉元信息、不拉树、不读内容。"""
     owner, repo = parse_repo_url(raw_url)
 
-    limits = httpx.Timeout(connect=10.0, read=TREE_READ_TIMEOUT_S, write=30.0, pool=10.0)
-    async with httpx.AsyncClient(timeout=limits) as client:
-        gh = GitHubClient(client)
+    client = await get_client()
+    gh = GitHubClient(client)
+    started = time.monotonic()
+    payload = await gh.get_commit(owner, repo, "HEAD")
+    commit_ms = _elapsed_ms(started)
 
+    sha = payload.get("sha")
+    if not isinstance(sha, str) or not _SHA_RE.match(sha):
+        raise fetch_failed("无法获取有效的 40 位 commit SHA")
+
+    return RepoHead(
+        owner=owner,
+        repo=repo,
+        commit_sha=sha,
+        commit=_normalize_commit(payload),
+        request_count=gh.request_count,
+        timing=TimingInfo(commit_ms=commit_ms),
+    )
+
+
+async def fetch_repo_bundle(raw_url: str, head: RepoHead | None = None) -> RepoBundle:
+    """拿到 HEAD 后补齐元信息并按 commit SHA 拉树；缓存命中时上层不会调用。"""
+    if head is None:
+        head = await resolve_head(raw_url)
+
+    client = await get_client()
+    gh = GitHubClient(client)
+
+    meta_ms = head.timing.meta_ms
+    if head.repo_meta is None:
         meta_started = time.monotonic()
-        meta = await gh.get_repo(owner, repo)
+        meta = await gh.get_repo(head.owner, head.repo)
         meta_ms = _elapsed_ms(meta_started)
-
         branch = meta.get("default_branch")
         if not isinstance(branch, str) or not branch:
             raise fetch_failed("无法从仓库元信息中获取默认分支")
+        head.repo_meta = _normalize_repo(meta)
+        head.ref = branch
 
-        commit_started = time.monotonic()
-        commit = await gh.get_commit(owner, repo, branch)
-        commit_ms = _elapsed_ms(commit_started)
+    tree_started = time.monotonic()
+    tree, fallback = await gh.get_tree(
+        head.owner, head.repo, head.commit_sha, head.ref
+    )
+    tree_ms = _elapsed_ms(tree_started)
 
-        sha = commit.get("sha")
-        if not isinstance(sha, str) or not _SHA_RE.match(sha):
-            raise fetch_failed("无法获取有效的 40 位 commit SHA")
-
-        tree_started = time.monotonic()
-        tree, fallback = await gh.get_tree(owner, repo, sha, branch)
-        tree_ms = _elapsed_ms(tree_started)
-
-        if tree_ms > TREE_HARD_TIMEOUT_MS:
-            raise timeout(f"获取文件树超过 90 秒上限（tree_ms={tree_ms}）")
-        tree_slow = tree_ms > TREE_SLOW_MS
-        if tree_slow:
-            logger.warning(
-                "tree request slow tree_ms=%d threshold_ms=%d repo=%s/%s",
-                tree_ms,
-                TREE_SLOW_MS,
-                owner,
-                repo,
-            )
-
-        entries = tree.get("tree")
-        if not isinstance(entries, list):
-            raise fetch_failed("文件树结构异常（缺少 tree 数组）")
-
-        logger.info(
-            "tree received entries=%d github_truncated=%s ref_fallback=%s",
-            len(entries),
-            bool(tree.get("truncated")),
-            fallback,
+    if tree_ms > TREE_HARD_TIMEOUT_MS:
+        raise timeout(f"获取文件树超过 90 秒上限（tree_ms={tree_ms}）")
+    tree_slow = tree_ms > TREE_SLOW_MS
+    if tree_slow:
+        logger.warning(
+            "tree request slow tree_ms=%d threshold_ms=%d repo=%s/%s",
+            tree_ms,
+            TREE_SLOW_MS,
+            head.owner,
+            head.repo,
         )
 
-        return RepoBundle(
-            repo=_normalize_repo(meta),
-            ref=branch,
-            commit_sha=sha,
-            tree=tree,
-            tree_ref_fallback=fallback,
-            tree_truncated_by_github=bool(tree.get("truncated")),
-            request_count=gh.request_count,
-            timing=TimingInfo(
-                meta_ms=meta_ms,
-                commit_ms=commit_ms,
-                tree_ms=tree_ms,
-                tree_slow=tree_slow,
-                tree_attempts=gh.tree_attempts or 1,
-            ),
-        )
+    entries = tree.get("tree")
+    if not isinstance(entries, list):
+        raise fetch_failed("文件树结构异常（缺少 tree 数组）")
+
+    logger.info(
+        "tree received entries=%d github_truncated=%s ref_fallback=%s",
+        len(entries),
+        bool(tree.get("truncated")),
+        fallback,
+    )
+
+    return RepoBundle(
+        repo=head.repo_meta or {},
+        ref=head.ref,
+        commit_sha=head.commit_sha,
+        tree=tree,
+        tree_ref_fallback=fallback,
+        tree_truncated_by_github=bool(tree.get("truncated")),
+        request_count=head.request_count + gh.request_count,
+        timing=TimingInfo(
+            meta_ms=meta_ms,
+            commit_ms=head.timing.commit_ms,
+            tree_ms=tree_ms,
+            tree_slow=tree_slow,
+            tree_attempts=gh.tree_attempts or 1,
+        ),
+        commit=head.commit,
+        owner=head.owner,
+        repo_name=head.repo,
+    )

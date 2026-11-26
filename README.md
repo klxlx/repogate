@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库能不能进内网。只读当前快照，不 clone、不执行代码、不扫 Git 历史；14 条规则合成 0–100 分、A/B/C/D 等级、一句话裁决，并输出一页三卡报告。当前完成**第 5 步（v3.0）：评分引擎 + 三卡报告**。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库能不能进内网。只读当前快照，不 clone、不执行代码、不扫 Git 历史；14 条规则合成 0–100 分、A/B/C/D 等级、一句话裁决，并输出一页三卡报告。当前完成**第 6 步（v3.1）：commit 缓存 + 更新跟踪 + 契约固化 + golden 回归**。
 
 ## 快速开始（Windows）
 
@@ -26,65 +26,47 @@ python3.13 -m venv .venv
 
 | 入口 | 说明 |
 |---|---|
-| `GET /healthz` | 返回 `{"ok": true}` |
-| `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段；响应含 `findings`、`checks`、`score` |
+| `GET /api/inspect?repo=<url>&refresh=0 或 1` | 查询参数版；每次先解析默认分支 HEAD，再决定缓存命中或重扫。`refresh=1` 跳过缓存。 |
+| `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段；同样支持 `?refresh=1`。 |
+| `GET /api/health` | 返回 `engine_version`、`schema_version`、`rules_count` |
 | `GET /api/rules` | 规则注册表：`id / dimension / severity / points / needs_content` |
+| `GET /docs` / `GET /redoc` | FastAPI 自动文档；两个 `/api/inspect` 方法都有 `response_model=InspectResponse` |
+| `GET /healthz` | 极简存活检查 `{"ok": true}` |
 | `GET /` | 单页表单，提交后展示结论 / 证据 / 建议三卡报告 |
 
-成功响应结构（requests 实例，字段名冻结）：
+### v3.1 顶层契约（`schema_version: 1`）
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `schema_version` | int | 固定 `1`；缓存文件与响应共用 |
+| `repo` | object | `owner / name / default_branch / head_sha / pushed_at / archived`；另保留 `full_name / stars / language / license` 兼容字段 |
+| `commit` | object | `sha / message / author / date`；缓存报告保留原 sha |
+| `scan` | object | `engine_version / scanned_at / duration_ms` |
+| `stats` | object | 取数与抽样统计，字段见下文 |
+| `checks` | array | 14 条规则，每条 `rule_id / status / basis / file / line` |
+| `findings` | array | 命中证据；完整密钥只以掩码形式出现 |
+| `score` | object | `total / raw_total / grade / verdict / caps / dimensions / deductions` |
+| `cache` | object | `hit / stale / cached_at`；新扫 `hit=false, stale=false`，命中 `hit=true`，陈旧 `stale=true` |
+| `warnings` | array | 结构化警告；陈旧缓存时为 `[{"code":"STALE_CACHE","message":"..."}]` |
+| `error` | object/null | 成功为 `null`；失败为 `{code,message,hint,retry_after}` |
+| 兼容字段 | — | `ok / provider / request_count / source / mode / ref / commit_sha / scope / timing / files / engine_version / scanned_at` 保留，页面逐步改用新字段 |
+
+成功响应骨架：
 
 ```json
 {
+  "schema_version": 1,
   "ok": true,
-  "provider": "github",
-  "request_count": 3,
-  "source": {"method": "trees_api", "tree_ref_fallback": false, "tree_truncated_by_github": false},
-  "mode": "metadata",
-  "repo": {"full_name": "psf/requests", "stars": 54768, "language": "Python", "license": "Apache-2.0", "archived": false, "pushed_at": "2026-11-02T16:55:12Z"},
-  "ref": "main",
-  "commit_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
-  "scope": {"files_scanned": 123, "files_skipped": 7, "bytes_scanned": 664038, "truncated": false, "truncate_reason": "none"},
-  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 121, "content_bytes": 658389, "content_failed": 0, "content_files_available": 120, "path_scan_files": 120, "path_scan_bytes": 658389, "content_total_text_files": 123, "secret_scan_files": 120, "secret_scan_bytes": 658389, "secret_sampling_ratio": 0.9756},
-  "timing": {"meta_ms": 749, "commit_ms": 425, "tree_ms": 688, "tree_slow": false, "tree_attempts": 1},
-  "files": [{"path": ".coveragerc", "size": 33, "is_text": true}],
-  "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "pyproject.toml", "line": 0, "evidence_masked": "浮动 4 个 / 总计 4 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high", "cap_eligible": false},
-    {"id": "R09-env-committed", "rule_id": "R09", "category": "secrets", "dimension": "secrets", "severity": "low", "title": ".gitignore 未包含 .env", "file": ".gitignore", "line": 0, "evidence_masked": "未发现 .env 入库，但 .gitignore 中没有 .env / .env.* 规则", "impact": "本地 .env 存在被误提交的风险", "fix": "在 .gitignore 增加 .env 与 .env.*", "hit_count": 1, "confidence": "medium", "cap_eligible": false}],
-  "checks": [
-    {"rule_id": "R01", "status": "pass", "basis": "根目录 README.md", "file": "README.md", "line": 0},
-    {"rule_id": "R02", "status": "pass", "basis": "根目录 README.md 覆盖 2 类说明：A 安装/构建、C 配置/环境", "file": "README.md", "line": 0},
-    {"rule_id": "R03", "status": "pass", "basis": "根目录 pyproject.toml（共 3 个候选）", "file": "pyproject.toml", "line": 0},
-    {"rule_id": "R04", "status": "pass", "basis": "根目录 pyproject.toml 浮动 4 个 / 总计 4 个（>50%），无 lockfile；仅提示 1 条", "file": "pyproject.toml", "line": 0},
-    {"rule_id": "R05", "status": "pass", "basis": "根目录 Makefile", "file": "Makefile", "line": 0},
-    {"rule_id": "R06", "status": "pass", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1；仅提示 1 条", "file": "docs/make.bat", "line": 0},
-    {"rule_id": "R07", "status": "pass", "basis": "存在跨平台入口：Makefile（Makefile）", "file": "Makefile", "line": 0},
-    {"rule_id": "R08", "status": "pass", "basis": "抽样 120/123（97.56%），命中 2 个文件（high 0 / low 1 / info 1）；仅提示 2 条", "file": "src/requests/utils.py", "line": 487},
-    {"rule_id": "R09", "status": "pass", "basis": "未发现 .env 入库，但 .gitignore 未包含 .env；仅提示 1 条", "file": ".gitignore", "line": 0},
-    {"rule_id": "R10", "status": "pass", "basis": "抽样 120/123（97.56%），未命中私钥材料", "file": "", "line": 0},
-    {"rule_id": "R11", "status": "pass", "basis": "抽样 120/123（97.56%），未命中令牌或带账密连接串", "file": "", "line": 0},
-    {"rule_id": "R12", "status": "pass", "basis": "根目录存在许可证文件 LICENSE", "file": "LICENSE", "line": 0},
-    {"rule_id": "R13", "status": "pass", "basis": "最近推送距今约 24 天（≤ 12 个月）", "file": "", "line": 0},
-    {"rule_id": "R14", "status": "pass", "basis": "仓库未归档（archived=false）", "file": "", "line": 0}
-  ],
-  "score": {
-    "total": 95,
-    "raw_total": 95,
-    "grade": "A",
-    "verdict": "可直接接入",
-    "caps": [],
-    "dimensions": [
-      {"key": "secrets", "label": "密钥与敏感信息", "weight": 30, "deduction": 3, "score": 27},
-      {"key": "portability", "label": "平台可移植", "weight": 25, "deduction": 0, "score": 25},
-      {"key": "docs", "label": "文档完备", "weight": 20, "deduction": 0, "score": 20},
-      {"key": "deps", "label": "依赖与入口", "weight": 15, "deduction": 2, "score": 13},
-      {"key": "maintenance", "label": "维护状态", "weight": 10, "deduction": 0, "score": 10}
-    ],
-    "deductions": [
-      {"rule_id": "R04", "points": -2, "reason": "依赖版本大面积浮动", "file": "pyproject.toml"},
-      {"rule_id": "R09", "points": -3, "reason": ".gitignore 未包含 .env", "file": ".gitignore"}
-    ]
-  },
-  "engine_version": "repogate-3.0",
-  "scanned_at": "2026-11-26T17:52:10.047040+00:00"
+  "repo": {"owner": "psf", "name": "requests", "default_branch": "main", "head_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157", "pushed_at": "2026-11-02T16:55:12Z", "archived": false},
+  "commit": {"sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157", "message": "…", "author": "…", "date": "…"},
+  "scan": {"engine_version": "repogate-3.1", "scanned_at": "2026-11-26T17:52:10.047040+00:00", "duration_ms": 7210},
+  "stats": {"secret_scan_files": 120, "secret_sampling_ratio": 0.9756},
+  "checks": [{"rule_id": "R01", "status": "pass", "basis": "根目录 README.md", "file": "README.md", "line": 0}],
+  "findings": [{"rule_id": "R04", "severity": "low", "file": "pyproject.toml", "evidence_masked": "…"}],
+  "score": {"total": 95, "raw_total": 95, "grade": "A", "verdict": "可直接接入", "caps": [], "dimensions": [], "deductions": []},
+  "cache": {"hit": false, "stale": false, "cached_at": "2026-11-26T17:52:17.000000+00:00"},
+  "warnings": [],
+  "error": null
 }
 ```
 
@@ -111,7 +93,8 @@ python3.13 -m venv .venv
 - `raw_total` 是封顶前的五维加总；`total = min(raw_total, 最严 cap.limit)`。`caps` 列出所有触发的上限，`total` 取最小。
 - `deductions` 只列真正扣分的 finding（info 不列）；`points` 为负分，页面按维度分组展示。
 - `grade` 与 `verdict` 由封顶后的 `total` 决定，不允许出现「总分 79 却显示 A」。
-- `engine_version` 与 `scanned_at` 为页面页脚透传字段；`scanned_at` 同时是 R13 判断「距今 > 12 个月」的时间基准。
+- `scan.engine_version` 与 `scan.scanned_at` 为页面页脚透传字段；`scan.scanned_at` 同时是 R13 判断「距今 > 12 个月」的时间基准。顶层 `engine_version` / `scanned_at` 为第 5 步兼容字段，值与 `scan` 相同。
+- `cache.cached_at` 是缓存文件的写入时间；`cache.hit` / `cache.stale` / `cached_at` 同源，页面与导出 JSON 均包含。
 
 `findings` 单条字段（最终 schema，后续步骤不再改）：
 
@@ -135,11 +118,60 @@ python3.13 -m venv .venv
 }
 ```
 
-失败响应：`{"ok": false, "error": {"code": "INVALID_URL", "message": "中文提示"}}`，HTTP 状态与错误码对应：`INVALID_URL` 400、`NOT_FOUND` 404、`RATE_LIMITED` 429、`TIMEOUT` 504、`FETCH_FAILED` / `UPSTREAM_ERROR` 502。
+失败响应：`{"schema_version":1,"ok":false,"error":{"code":"…","message":"中文提示","hint":"恢复建议","retry_after":null}}`。HTTP 状态与错误码：
+
+| HTTP | code | hint（对外恢复建议） |
+| --- | --- | --- |
+| 400 | `INVALID_URL` | 示例：`https://github.com/psf/requests` |
+| 404 | `REPO_NOT_FOUND` | 确认仓库地址、公开状态与网络可达 |
+| 403/429 | `RATE_LIMITED` | 设置 `GITHUB_TOKEN`；有缓存时返回 stale 旧报告；`retry_after` 为 `X-RateLimit-Reset` 换算的剩余秒数 |
+| 502 | `FETCH_FAILED` | 检查网络与 GitHub 状态；重复失败看日志 |
+| 504 | `TIMEOUT` | 稍后重试；文件树接近 90 秒硬上限 |
+| 500 | `INTERNAL` | 服务端未预期错误；不要当作仓库结论 |
+
+- 错误码只有这 6 个；`UPSTREAM_ERROR` / `INTERNAL_ERROR` / `NOT_FOUND` 为第 5 步旧名，v3.1 已统一替换。
+- `error` 在成功响应中为 `null`；在 429 无缓存时 `retry_after` 为整数秒，缺失重置头时为 `null`。
+
+## 更新跟踪设计（v3.1）
+
+这一节回答四个问题，每条都指向代码或字段。
+
+### 1. 怎么发现更新
+
+**每次访问都先解析默认分支 HEAD，再与缓存 key 比对。** `_inspect` 先调用 `app/github.py::resolve_head`（单次 `commits/HEAD`，1 次轻请求），得到 `head_sha`；`app/main.py::_inspect` 用 `owner/repo@sha` 查缓存。一致就复用，不一致就重扫。没有轮询、没有 webhook，也不依赖 `pushed_at` 猜测。
+
+### 2. 怎么避免全量重算
+
+**commit 内容寻址。** key 为 `owner/repo@commit_sha`，文件落在：
+
+```text
+.cache/reports/<owner>__<repo>/<sha>.json
+```
+
+缓存内容是完整报告 JSON + `schema_version` + `cached_at` + `duration_ms`，由 `app/cache.py::save` 原子写入（同目录 tmp + `os.replace`），失败不落盘；读取由 `cache.load` 完成。命中时不再请求元信息、tree，也不读 raw 内容，只保留 1 次 HEAD 轻请求。每仓按 mtime 保留最近 5 份，`_prune` 淘汰第 6 份及更旧。连接池复用后，热身状态下缓存命中实测约 110–135ms（上限要求 <300ms）。
+
+commit 不变 → 字节级复用；commit 变了 → key 自然不同，不需要任何缓存失效逻辑。`?refresh=1` 跳过命中并重新扫描。
+
+### 3. 报告怎么标注 commit
+
+- JSON：`commit.sha`（缓存报告保留原 sha，不把旧报告改成新 HEAD）。
+- 页面页脚：完整 commit SHA、扫描时间、引擎版本、`schema_version`、缓存状态（命中 / 新扫 / 陈旧）、缓存时间。
+- 缓存文件本身不覆盖 commit；同一 commit 的 score 与 checks 可逐字节复用。
+
+### 4. 限流失败怎么兜底
+
+`app/main.py::_inspect` 捕获 `ScanError.code == "RATE_LIMITED"`（来源 403/429）：
+
+- **有任意缓存（哪怕旧 sha）**：`cache.load_latest` 取最新一份，返回 HTTP 200；`cache.stale=true`、`cache.hit=false`，并在 `warnings` 写入 `STALE_CACHE`；页面顶部黄色警告条显示缓存时间与原 commit，不遮报告。旧报告的 `commit.sha` 保持原值。
+- **无缓存**：抛出 429；`error={code:"RATE_LIMITED",message,hint,retry_after}`，`retry_after` 由 `X-RateLimit-Reset` 换算为剩余秒数（缺失时为 `null`）。页面显示错误与恢复建议，不返回空白页，也不假装扫描成功。
+
+限流兜底不改变规则结论，只改变缓存元数据；导出 JSON 同样含 `cache` 与 `warnings`。
+
+**未来工作**：webhook / 定时重扫、分布式缓存、多用户隔离与数据库都不在 v3.1 范围内；当前只用本地文件缓存。
 
 ## 取数边界
 
-- 单仓库固定 3 次 GitHub API 请求：仓库元信息、默认分支 commit、`git/trees/{commit_sha}?recursive=1`。不 clone、不扫 Git 历史、不下载任何文件内容、不调用 contents API。
+- 首次扫描固定 3 次 GitHub API 请求：默认分支 HEAD commit、仓库元信息、`git/trees/{commit_sha}?recursive=1`；缓存命中只发第 1 次 HEAD。不 clone、不扫 Git 历史、不下载任何文件内容、不调用 contents API。
 - trees 按 commit SHA 请求；仅当 SHA 返回 404/422 时回退默认分支重试一次，`source.tree_ref_fallback=true`，这是唯一允许的第 4 次请求。
 - 不落盘、不解析 zip；项目目录不保留任何压缩包或解压产物。
 - 清单阶段只统计 `type=blob`，单一硬顶 `BLOB_CAP=20000`（仅防病态仓库）。不再有 2000 文件 / 50MB 闸门。
@@ -191,8 +223,8 @@ python3.13 -m venv .venv
 | R09 | env-committed | secrets | critical | -10 | 是 | tree 命中 `.env` / `.env.*`（排除 `.env.example/.sample/.template/.dist`，大小写不敏感）；读前 4KB：密钥类 KEY 有非占位值 → critical（封顶 69），密钥类值全空/占位 → medium（-10，封顶 79）；不存在但 `.gitignore` 未包含 `.env` → low（提示）；`tests/testdata` 等目录中的 `.env` 视为夹具降级 low；evidence 只显示 `KEY=***`。密钥类 KEY 冻结表：`secret\|token\|password\|passwd\|pwd\|api[_-]?key\|access[_-]?key\|credential\|auth\|private`，按词边界匹配（`AUTHOR` 不算 `auth`） |
 | R10 | private-key | secrets | critical | -15 | 是 | 内容命中 `-----BEGIN … PRIVATE KEY-----` → critical（封顶 59）；tree 命中 `.pem/.key/.p12/.pfx/.jks/id_rsa*` 但内容不可读 → high（-15）；`tests/test/fixtures/examples/docs` 及测试文件降级 low |
 | R11 | secret-token | secrets | critical | -15 | 是 | 内容命中 OpenAI/Anthropic/AWS/阿里云/GitHub/Slack/Google 令牌、JWT、Bearer、带账密数据库 URL；占位值、重复字符 → low，文档 → info，测试/示例目录 → low；命中行属于规则/模式定义（路径含 `rules/` `patterns/`、文件名为 `gitleaks.toml` 或 `*rule*`，或同时含 `[ ] { } ( ) \| \ * + ?` 与 `regex/pattern/re.compile` 等关键字）→ info，不封顶；其余按封顶资格判 critical（封顶 59）或 high（-15，不封顶） |
-| R12 | license-missing | maintenance | low | -4 | 否 | 根目录无 `LICENSE` / `LICENCE` / `COPYING`（允许 `.md/.txt` 后缀）→ low 提示；有则 pass |
-| R13 | stale-repo | maintenance | low | -3 | 否 | `pushed_at` 距 `scanned_at` > 365 天 → low 提示；≤365 天 pass；`pushed_at` 缺失/不可解析 → degraded |
+| R12 | license-missing | maintenance | low | -4 | 否 | 根目录无 `LICENSE` / `LICENCE` / `COPYING`（允许 `.md/.txt` 后缀）且 GitHub `license` 元信息可判定 → low 提示；许可证文件存在 → pass；`license` 元信息为 `null` / 空 / `NOASSERTION` → `n/a`，不猜 |
+| R13 | stale-repo | maintenance | low | -3 | 否 | `pushed_at` 距 `scanned_at` > 365 天 → low 提示；≤365 天 pass；`pushed_at` 缺失/不可解析 → `n/a`，不猜 |
 | R14 | archived | maintenance | low | -3 | 否 | `archived=true` → low 提示；`false` → pass |
 
 - 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
@@ -221,7 +253,7 @@ python3.13 -m venv .venv
 
 | status | 含义 | 与 findings 的关系 |
 | --- | --- | --- |
-| `pass` | 通过；允许 low / info 提示 | 不得有 medium 及以上 finding；low/info finding 保留，basis 追加「仅提示 N 条」；提示项的计分由 `score.deductions` 给出 |
+| `pass` | 通过；允许 low / info 提示 | 不得有 medium 及以上 finding；low/info finding 保留，basis 追加「提示 N 条（-X）」；X=0 时写「仅提示 N 条」；X 由 `score.deductions` 同源计算 |
 | `fail` | 未通过 | 必须至少有一条 medium / high / critical finding |
 | `degraded` | 降级：依据文件读取失败或只在弱目录命中，结论不完整（页面黄色） | 部分依据可用时输出 info finding；全部依据失败时只在 checks 记 degraded，不出 finding |
 | `n/a` | 不适用（页面灰色） | 不允许有对应 finding；该维度仍按固定权重计满分，不因规则不适用而放大其它维度 |
@@ -236,14 +268,14 @@ python3.13 -m venv .venv
 
 ### 密钥与敏感信息（第 4 步）
 
-- R09 / R10 / R11 的每条 finding 带 `cap_eligible`：`secret_sampling_ratio ≥ 0.5` 或命中高风险路径（`.env*`、`*.pem/*.key/*.p12/*.pfx`、`id_rsa*`、`*credential*`、`*secret*`、根目录配置文件）时为 `true`；第 5 步据此封顶（R09 critical 69 / medium 79，R10 / R11 59）。
+- R09 / R10 / R11 的每条 finding 带 `cap_eligible`：`secret_sampling_ratio ≥ 0.5` 或命中高风险路径（`.env*`、`*.pem/*.key/*.p12/*.pfx`、`id_rsa*`、`*credential*`、`*secret*`、根目录配置文件）时为 `true`；据此封顶（R09 critical 69 / medium 79，R10 / R11 59）。
 - 抽样率 <20% 时，R08 / R10 / R11 的 finding 一律 `cap_eligible=false`，扣分减半；不允许用低抽样触发封顶。
 - 不满足封顶资格时仍然出 finding，但 `severity=high`、`cap_eligible=false`，impact 固定写「抽样范围内发现，未构成全仓结论」。
 - 掩码：`app/masking.py::mask_secret` 统一为「前 4 + *** + 后 2」，长度 <8 全 `***`。R09 evidence 只显示 `KEY=***`；完整密钥不得出现在响应 JSON、页面、日志或 golden 文件。
 - 占位判定（R11）：值含 `xxx / your / example / sample / demo / test / dummy / fake / placeholder / changeme / changethis / redacted / < / ${ / {{ / %s`，或去掉前缀后由同一字符重复构成 → low，不封顶。
 - 内容预取把 `.env*`、`.gitignore`、`.pem/.key/id_rsa*`、`*credential*/*secret*` 前移到普通抽样之前，保证 R09/R10 尽量拿到原文。
 
-## 评分模型（第 5 步，v3.0）
+## 评分模型（v3.1：权重与门槛冻结）
 
 评分口径是产品主张，公开接受质疑；代码在 `app/scoring.py`，所有数字只在这里定义一次。
 
@@ -259,22 +291,28 @@ python3.13 -m venv .venv
 
 `维度分 = max(0, 权重 − 该维度所有 finding 的扣分合计)`；`raw_total = 五维相加`（满分 100）。
 
-### 扣分映射
+### 扣分映射与规则-分值总表（14 条逐条）
 
-R01–R08 保留第 2/3 步已冻结的规则扣分，避免第 5 步把既有结论重新定价：
+`/api/rules` 的 `points` 是规则标称值；`score.deductions` 才是实际扣分。下表把两者同时列出，避免“旧规则分”这类模糊表述。
 
-| 规则 | 扣分口径 |
-| --- | --- |
-| R01 | 每条 finding -10 |
-| R02 | 每条 finding -4 |
-| R03 | 每条 finding -8 |
-| R04 | 每条 finding -2 |
-| R05 | 每条 finding -4 |
-| R06 | 每条 finding -6 |
-| R07 | 每条 finding -4 |
-| R08 | 每个 high 文件 -2（与 R08 原「单规则封顶 -10」一致；low/info 0） |
+| 规则 | 维度 | 标称 points | 评分实际扣分（每个 finding） |
+| --- | --- | ---: | --- |
+| R01 | docs | -10 | -10 |
+| R02 | docs | -4 | -4 |
+| R03 | deps | -8 | -8 |
+| R04 | deps | -2 | -2 |
+| R05 | deps | -4 | -4 |
+| R06 | portability | -6 | -6 |
+| R07 | portability | -4 | -4 |
+| R08 | portability | -10 | 每个 `high` 文件 -2，`low/info` 0，单规则最多 -10 |
+| R09 | secrets | -10 | 按 severity：`critical -30 / medium -10 / low -3 / info 0` |
+| R10 | secrets | -15 | 按 severity：`critical -30 / high -15 / low -3 / info 0` |
+| R11 | secrets | -15 | 按 severity：`critical -30 / high -15 / low -3 / info 0` |
+| R12 | maintenance | -4 | 按 `low` 实扣 -3（标称 -4 只出现在 `/api/rules`） |
+| R13 | maintenance | -3 | 按 `low` 实扣 -3 |
+| R14 | maintenance | -3 | 按 `low` 实扣 -3 |
 
-R09–R14 由 severity 决定，不由规则各自随意定：
+R09–R14 由 finding 的 `severity` 决定，不由规则各自随意定；R01–R08 使用固定规则分。唯一来源是 `app/scoring.py` 的 `LEGACY_POINTS` / `SEVERITY_POINTS`，页面与 `score.deductions` 不会另算一套。
 
 | severity | 扣分 |
 | --- | --- |
@@ -288,7 +326,7 @@ R09–R14 由 severity 决定，不由规则各自随意定：
 
 ### 抽样折半
 
-- R08 / R10 / R11 的扣分，在 `stats.secret_sampling_ratio < 20%` 时减半（向下取整到整数，最少 1 分）。
+- R08 / R10 / R11 的扣分，在 `stats.secret_sampling_ratio < 20%` 时减半（四舍五入到整数，最少 1 分）。
 - 同一条件下这些规则的 finding 一律 `cap_eligible=false`，不允许用低抽样触发封顶。
 - R09 不受折半影响：`.env` 的判定只看文件是否存在与前 4KB 内容，不依赖大范围抽样。
 
@@ -317,17 +355,18 @@ R09–R14 由 severity 决定，不由规则各自随意定：
 
 ### 报告页（一页三卡）
 
-- 卡 1 结论：纯 CSS `conic-gradient` 分数环（无图表库）、等级、裁决、阻断项数（critical finding 数）、高危数（high finding 数）、内容抽样率；触发封顶时逐条列出上限与原因。
+- 卡 1 结论：纯 CSS `conic-gradient` 分数环（无图表库）、等级、裁决、阻断项数（critical finding 数）、高危数（high finding 数）、内容抽样率；门槛区显示「已检查 / 已生效 / 未生效（原始分更低）」。
 - 卡 2 证据：五维横向条（得分/权重，点开可见该维度每一笔 `deductions`）、14 条检查矩阵（通过 / 提示 / 未通过 / 不适用 四色，悬停显示 basis）、风险表（critical → info 排序，含 rule_id、文件:行号、掩码证据、影响、修复建议；medium 以下默认折叠）。
 - 卡 3 建议：本步只放占位「AI 建议将在后续接入」，不伪造 AI 结论。
-- 页脚：commit SHA、扫描时间、引擎版本、文件数、内容抽样率、封顶原因、导出 JSON 按钮。导出内容来自同一 `InspectResponse`，与 `POST /api/inspect` 完全一致。
+- 页脚：commit SHA、扫描时间、引擎版本、`schema_version`、缓存状态（命中 / 新扫 / 陈旧）、缓存时间、文件数、内容抽样率、封顶原因、导出 JSON 按钮。导出内容来自同一 `InspectResponse`，与 `/api/inspect` 完全一致（含 `cache`）。
+- 陈旧缓存：顶部黄色警告条显示「上游限流，以下为 T 时间的缓存结果（commit Y），可能已过期」，报告不隐藏。
 - 375px 不横向溢出：三卡单列、风险表转为纵向卡片、矩阵单列；桌面为双列矩阵与标准表格。
 
 
 
 
 
-- 默认匿名调用：60 次/时（GitHub 按来源 IP 计）。本项目每仓库固定 3 次 API 请求，满配额约可扫 20 个仓库/时。
+- 默认匿名调用：60 次/时（GitHub 按来源 IP 计）。首次扫描固定 3 次 API 请求（HEAD + 元信息 + tree），缓存命中只发 1 次 HEAD；满配额约可覆盖 20 次首次扫描/时。
 - 可选：设置环境变量 `GITHUB_TOKEN`（公开仓库只读即可，无需额外 scope），配额提升到 5000 次/时。每次扫描读取一次，只放进 `Authorization: Bearer` 请求头；不写进代码、不出现在响应、不出现在日志。
 - 403/429 时读取 `X-RateLimit-Reset`（epoch 秒）并转为本地时间，返回：`GitHub 配额已耗尽，预计 HH:MM 恢复；本地可设置 GITHUB_TOKEN 提升到 5000 次/时`。响应头缺失时退回原通用提示。
 - 日志只记录请求方法与 URL，不记录请求头。
@@ -343,18 +382,49 @@ R09–R14 由 severity 决定，不由规则各自随意定：
 
 ## 已知限制
 
-- 429 文案（含 `X-RateLimit-Reset` 恢复时间）目前只用 mock 上游与单测验证，未真实耗尽匿名配额复现。
-- 匿名配额 60 次/时、每仓库 3 次 API 请求，约 20 个仓库/时；建议本地设置 `GITHUB_TOKEN` 提升到 5000 次/时。
+- Starlette 1.10.0 对 `httpx` TestClient 的升级提示只出现在 pytest；生产路径不用 TestClient，`pytest.ini` 与 `tests/conftest.py` 按依赖版本原因过滤，不修改业务代码。
+- 429 两分支已用真实耗尽匿名配额复现：有缓存返回 200 + `stale` + `STALE_CACHE`，无缓存返回 429 + `retry_after`；本机未设置 `GITHUB_TOKEN` 时仍建议先等配额重置再批量扫描。
+- 匿名配额 60 次/时；首次扫描 3 次 API 请求，缓存命中 1 次 HEAD，约 20 个首次扫描/时；建议本地设置 `GITHUB_TOKEN` 提升到 5000 次/时。
 - 密钥规则受抽样率约束：抽样 <50% 且命中文件不在高风险路径时只作 high 提示，不封顶，不能据此断言全仓无泄露。
 - R09 只解析 `.env` 前 4KB 的 `KEY=VALUE`；多行值、注释中的值不参与判定。
 - 占位词表是启发式，宁可漏报也不误报：真实值若恰好含 `test` / `example` 等词会被降级为 low。
 - 测试/样例目录（`tests/` `test/` `fixtures/` `examples/` `docs/` `samples/` `testdata/` 等）里的敏感命中只提示、不扣分（按 low / info 计），避免把假密钥夹具当成事故。
 - R11 的「规则定义降级」不是只看 `[ ] { } ( ) | \ * + ?`：普通配置字典（如 `{"Authorization": "Bearer …"}`）也含 `{}`，若无条件降级会把真实配置误判成规则样例。实现收紧为「规则路径，或同时含元字符与 `regex/pattern/re.compile` 等关键字」；这是对字面口径的主动收窄，需审定。
-- R12/R13/R14 只读仓库元信息与根目录文件名；`pushed_at` 缺失时 R13 记 degraded，不猜测仓库是否停更。
+- R12/R13/R14 只读仓库元信息与根目录文件名；`pushed_at` 缺失或 `license` 元信息缺失时 R13/R12 记 `n/a`，不猜测。
+
+## Golden 回归
+
+### A. 评分纯函数（离线、默认必跑）
+
+固定 findings → 期望 `total / raw_total / grade / caps / deductions`，数据在 `tests/golden/scoring_cases.json`，测试在 `tests/test_scoring_golden.py`。当前 8 组：
+
+1. 无 finding（100 A）
+2. 单 high（R06）
+3. R09 critical（69 C）
+4. R10 + R11 两 critical（59 D）
+5. R08 抽样折半
+6. docs+deps=8（69 C）
+7. docs+deps=12（59 D）
+8. R09 medium（79 B）
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/test_scoring_golden.py -q
+```
+
+### B. 六仓 summary（需联网，手动更新）
+
+`tests/golden/six_repos.json` 只存稳定字段：`repo / commit / score.total / grade / checks（每规则 status） / finding_counts（每规则条数）`；不存扫描时间、耗时、扫描顺序、evidence。`scripts/regen_golden.py` 手动刷新，不放进默认 CI；测试在文件存在且设置 `REPOGATE_GOLDEN_NETWORK=1` 时联网比对，否则 skip。
+
+```powershell
+.venv\Scripts\python.exe scripts/regen_golden.py
+$env:REPOGATE_GOLDEN_NETWORK="1"; .venv\Scripts\python.exe -m pytest tests/test_six_repos_golden.py -q
+```
+
+配额不足时不更新 golden；`refresh=1` 会跳过本地缓存，确保拿到新 HEAD。
 
 ## 当前明确不做
 
-AI 建议卡（第 7 步）、golden 快照固化 diff（第 6 步）、内容全量下载、缓存、数据库、登录、历史与组织看板、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅与第 5 步指定的页脚字段外不展示其它 `stats/timing`，验收以 `/api/inspect` JSON 为准。
+AI 建议卡（第 7 步）、webhook / 定时重扫、分布式缓存、多用户隔离、数据库、内容全量下载、登录、历史与组织看板、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅与第 6 步指定的页脚字段外不展示其它 `stats/timing`，验收以 `/api/inspect` JSON 为准。
 
 ## 测试
 

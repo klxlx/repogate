@@ -1,5 +1,5 @@
 # 环境与缓存
-.venv/
+.cache/
 __pycache__/
 *.py[cod]
 .pytest_cache/

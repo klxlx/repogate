@@ -9,9 +9,9 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <p class="eyebrow">RepoGate / 第 5 步（v3.0）：R01–R14</p>
+      <p class="eyebrow">RepoGate / 第 6 步（v3.1）：缓存 + 契约 + golden</p>
       <h1>这个仓库，能不能进内网？</h1>
-      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；14 条规则合成 0–100 分与一句话裁决。</p>
+      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；14 条规则合成 0–100 分与一句话裁决。报告按 commit 内容寻址缓存，限流时返回带 stale 标记的旧报告。</p>
     </header>
 
     <form class="lookup" method="post" action="/">
@@ -33,10 +33,14 @@
     <section class="alert" role="alert">
       <span class="alert-code">{{ error.code }}</span>
       <p>{{ error.message }}</p>
+      {% if error.hint %}<p class="alert-hint">{{ error.hint }}{% if error.retry_after is not none %} · retry_after={{ error.retry_after }} 秒{% endif %}</p>{% endif %}
     </section>
     {% endif %}
 
     {% if result %}
+    {% if result.cache.stale %}
+    <section class="banner warn" role="status">{{ stale_warning }}</section>
+    {% endif %}
     {% if tree_slow %}
     <section class="banner" role="status">超大仓库，本次耗时较长（文件树 {{ result.timing.tree_ms }} ms）</section>
     {% endif %}
@@ -57,7 +61,7 @@
         <p class="repo-line">
           <span class="mono">{{ result.repo.full_name }}</span>
           <span class="dot">·</span>
-          <span class="mono">@{{ result.commit_sha[:7] }}</span>
+          <span class="mono">@{{ result.commit.sha[:7] }}</span>
           <span class="dot">·</span>
           <span>原始分 {{ result.score.raw_total }}{% if result.score.caps %}，封顶后 {{ result.score.total }}{% endif %}</span>
         </p>
@@ -66,15 +70,25 @@
           <div><dt>高危项</dt><dd>{{ high_count }}</dd></div>
           <div><dt>内容抽样率</dt><dd>{{ sampling_pct }}</dd></div>
         </dl>
-        {% if result.score.caps %}
-        <ul class="cap-list">
-          {% for cap in result.score.caps %}
-          <li><strong>上限 {{ cap.limit }}</strong> · {{ cap.reason }}</li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="cap-none">未触发封顶，总分等于五维得分之和。</p>
-        {% endif %}
+        <div class="cap-box">
+          <div class="cap-head">
+            <span class="cap-pill">已检查</span>
+            <span class="cap-state">{{ cap_state }}</span>
+          </div>
+          {% if cap_rows %}
+          <ul class="cap-list">
+            {% for row in cap_rows %}
+            <li>
+              <strong>上限 {{ row.cap.limit }}</strong>
+              <span class="cap-row-state">{{ row.state }}</span>
+              · {{ row.cap.reason }}
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="cap-none">门槛已检查，未触发任何封顶；总分等于五维得分之和。</p>
+          {% endif %}
+        </div>
       </div>
     </section>
 
@@ -202,16 +216,18 @@
 
     <footer class="foot">
       <div class="foot-grid">
-        <span><b>commit</b> <span class="mono">{{ result.commit_sha }}</span></span>
+        <span><b>commit</b> <span class="mono">{{ result.commit.sha }}</span></span>
         <span><b>扫描时间</b> <span class="mono">{{ scan_time_local }}</span></span>
-        <span><b>引擎</b> <span class="mono">{{ result.engine_version }}</span></span>
+        <span><b>引擎</b> <span class="mono">{{ result.scan.engine_version }}</span></span>
+        <span><b>schema</b> <span class="mono">v{{ result.schema_version }}</span></span>
+        <span><b>缓存</b> <span class="mono">{{ cache_state }}</span>{% if result.cache.cached_at %} · {{ cache_time_local }}{% endif %}</span>
         <span><b>文件数</b> {{ result.scope.files_scanned }} 扫描 / {{ result.scope.files_skipped }} 跳过</span>
         <span><b>内容抽样率</b> {{ sampling_pct }}</span>
         <span><b>封顶原因</b> {% if result.score.caps %}{% for cap in result.score.caps %}{{ cap.reason }}{% if not loop.last %}；{% endif %}{% endfor %}{% else %}无{% endif %}</span>
       </div>
       <div class="foot-actions">
-        <button type="button" id="export-json" data-filename="{{ result.repo.full_name | replace('/', '-') }}-{{ result.commit_sha[:7] }}.json">导出 JSON</button>
-        <span class="foot-note">导出内容与 POST /api/inspect 的响应完全一致。</span>
+        <button type="button" id="export-json" data-filename="{{ result.repo.full_name | replace('/', '-') }}-{{ result.commit.sha[:7] }}.json">导出 JSON</button>
+        <span class="foot-note">导出内容与 GET/POST /api/inspect 的响应完全一致（含 cache）。</span>
       </div>
     </footer>
 

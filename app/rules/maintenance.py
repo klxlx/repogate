@@ -6,9 +6,13 @@ import datetime as dt
 import re
 
 from ..snapshot import Snapshot
-from .base import Rule, RuleOutcome, conclusion, degraded, make_finding, passed
+from .base import Rule, RuleOutcome, conclusion, make_finding, na, passed
 
 _ROOT_LICENSE_RE = re.compile(r"^(?:licen[cs]e|copying)(?:\.(?:md|txt))?$")
+
+
+def _license_unknown(value: object) -> bool:
+    return value in (None, "", "NOASSERTION")
 
 
 def _root_license(snapshot: Snapshot) -> str | None:
@@ -24,6 +28,12 @@ def detect_license_missing(snapshot: Snapshot) -> RuleOutcome:
     license_path = _root_license(snapshot)
     if license_path:
         return passed(R12, f"根目录存在许可证文件 {license_path}", file=license_path)
+
+    if _license_unknown(snapshot.license):
+        return na(
+            R12,
+            "根目录无许可证文件，且 GitHub license 元信息缺失或无法判定，规则不适用",
+        )
 
     finding = make_finding(
         R12,
@@ -59,9 +69,9 @@ def _parse_pushed_at(value: str | None) -> dt.datetime | None:
 def detect_stale_repo(snapshot: Snapshot) -> RuleOutcome:
     pushed = _parse_pushed_at(snapshot.pushed_at)
     if pushed is None:
-        return degraded(
+        return na(
             R13,
-            f"pushed_at 缺失或无法解析（{snapshot.pushed_at or '空'}），无法判断是否超过 12 个月",
+            f"pushed_at 缺失或无法解析（{snapshot.pushed_at or '空'}），规则不适用",
         )
 
     now = snapshot.scanned_at

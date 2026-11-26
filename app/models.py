@@ -6,16 +6,54 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from .version import ENGINE_VERSION, SCHEMA_VERSION
+
 
 class RepoInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    full_name: str
-    stars: int
+    full_name: str = ""
+    stars: int = 0
     language: str | None = None
     license: str | None = None
     archived: bool = False
     pushed_at: str | None = None
+    # v3.1 契约字段（对象内保留 full_name/stars 等既有兼容字段）
+    owner: str = ""
+    name: str = ""
+    default_branch: str = ""
+    head_sha: str = ""
+
+
+class CommitInfo(BaseModel):
+    sha: str = ""
+    message: str = ""
+    author: str = ""
+    date: str = ""
+
+
+class ScanInfo(BaseModel):
+    engine_version: str = ENGINE_VERSION
+    scanned_at: str = ""
+    duration_ms: int = 0
+
+
+class CacheInfo(BaseModel):
+    hit: bool = False
+    stale: bool = False
+    cached_at: str | None = None
+
+
+class WarningInfo(BaseModel):
+    code: str
+    message: str
+
+
+class ErrorInfo(BaseModel):
+    code: str
+    message: str
+    hint: str = ""
+    retry_after: int | None = None
 
 
 class ScopeInfo(BaseModel):
@@ -85,7 +123,7 @@ class RuleInfo(BaseModel):
 
 
 class Check(BaseModel):
-    """每条规则的三态结论：pass / fail / degraded，basis 必须可复核。"""
+    """每条规则的四态结论：pass / fail / degraded / n/a，basis 必须可复核。"""
 
     rule_id: str
     status: Literal["pass", "fail", "degraded", "n/a"]
@@ -138,6 +176,9 @@ class ScoreInfo(BaseModel):
 
 
 class InspectResponse(BaseModel):
+    """v3.1 顶层契约；旧字段保留为兼容别名，页面逐步改用新字段。"""
+
+    schema_version: int = SCHEMA_VERSION
     ok: bool = True
     provider: str = "github"
     request_count: int = 0
@@ -146,6 +187,8 @@ class InspectResponse(BaseModel):
     repo: RepoInfo
     ref: str
     commit_sha: str
+    commit: CommitInfo = Field(default_factory=CommitInfo)
+    scan: ScanInfo = Field(default_factory=ScanInfo)
     scope: ScopeInfo
     stats: StatsInfo
     timing: TimingInfo
@@ -153,18 +196,25 @@ class InspectResponse(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     checks: list[Check] = Field(default_factory=list)
     score: ScoreInfo = Field(default_factory=ScoreInfo)
-    engine_version: str = "repogate-3.0"
+    cache: CacheInfo = Field(default_factory=CacheInfo)
+    warnings: list[WarningInfo] = Field(default_factory=list)
+    error: ErrorInfo | None = None
+    # 兼容第 5 步的顶层字段；新代码以 scan / commit 为准。
+    engine_version: str = ENGINE_VERSION
     scanned_at: str = ""
 
 
-class ErrorBody(BaseModel):
-    code: str
-    message: str
-
-
 class ErrorResponse(BaseModel):
+    schema_version: int = SCHEMA_VERSION
     ok: bool = False
-    error: ErrorBody
+    error: ErrorInfo
+
+
+class HealthResponse(BaseModel):
+    ok: bool = True
+    engine_version: str = ENGINE_VERSION
+    schema_version: int = SCHEMA_VERSION
+    rules_count: int
 
 
 class InspectRequest(BaseModel):

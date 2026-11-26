@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，先回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件。当前完成**第 1 步（收尾 v1.3）：git/trees 元数据清单 + BLOB_CAP 采样**，尚未实现规则、评分与报告页。
+输入一个公开 GitHub 仓库地址，先回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件。当前完成**第 1 步（收尾 v1.4）：git/trees 元数据清单 + BLOB_CAP 采样 + 口径恒等式**，尚未实现规则、评分与报告页。
 
 ## 快速开始（Windows）
 
@@ -42,9 +42,9 @@ python3.13 -m venv .venv
   "repo": {"full_name": "psf/requests", "stars": 54768, "language": "Python", "license": "Apache-2.0", "archived": false, "pushed_at": "2026-11-02T16:55:12Z"},
   "ref": "main",
   "commit_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
-  "scope": {"files_scanned": 130, "files_skipped": 0, "bytes_scanned": 4451562, "truncated": false, "truncate_reason": "none"},
-  "stats": {"text_files": 124, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130},
-  "timing": {"meta_ms": 1070, "commit_ms": 441, "tree_ms": 431},
+  "scope": {"files_scanned": 123, "files_skipped": 7, "bytes_scanned": 664038, "truncated": false, "truncate_reason": "none"},
+  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0},
+  "timing": {"meta_ms": 1662, "commit_ms": 565, "tree_ms": 529, "tree_slow": false},
   "files": [{"path": ".coveragerc", "size": 33, "is_text": true}]
 }
 ```
@@ -65,16 +65,28 @@ python3.13 -m venv .venv
   5. 其余文件
 - 采样后再按路径排序返回前 50 条。
 - `scope.truncate_reason` 只取三个枚举：`none`、`github_tree_limit`、`blob_cap`。GitHub 自己返回的 `truncated` 另由 `source.tree_truncated_by_github` 透出。
-- `scope.bytes_scanned` 是**元数据口径**：清单内计入 blob 的 `size` 之和，不代表下载量；清单阶段不读取任何文件内容。
-- `stats.total_blobs_in_tree` 是树内 blob 总数；`stats.listed_blobs` 是计入清单的 blob 数，两者相等说明清单完整。
-- `stats.text_files` 是计入清单的 blob 中按扩展名判为文本的数量（含大于 1MB 的文本）；`stats.windows_script_count` 是全仓库 blob 中 `.bat/.cmd/.ps1/.vbs` 的实际数量，不受清单限额影响。
-- `scope.files_scanned` 与 `listed_blobs` 同值；`scope.files_skipped` 只统计因 `BLOB_CAP` 未列入的数量，不把媒体/二进制过滤混进该字段。
-- `files` 展示层仍跳过 `.git` / `node_modules` / `vendor` / `dist` / `build` / `.venv`、二进制、图片视频、压缩包与单文件大于 1MB，因此展示条数会少于 `listed_blobs`。
-- 耗时保护：`tree_ms > 50000` 打印 WARNING；`tree_ms > 60000` 返回 `TIMEOUT`，不静默拖死。
+- 口径冻结如下（字段名不改，语义不混用）：
+
+| 字段 | 口径 |
+| --- | --- |
+| `stats.total_blobs_in_tree` | 仓库 tree 里的全部 blob 数（分母） |
+| `stats.listed_blobs` | 进入清单的 blob 数（受 `BLOB_CAP=20000` 限制） |
+| `scope.files_scanned` | 通过过滤、真正纳入分析的文件数（文本、路径安全、单文件 ≤1MB） |
+| `scope.files_skipped` | `listed_blobs - files_scanned`（媒体 / 二进制 / 超大 / 无效路径） |
+| `scope.bytes_scanned` | `files_scanned` 的 `size` 之和（分析口径，不代表下载量） |
+| `stats.bytes_total_listed` | `listed_blobs` 的 `size` 之和（清单口径） |
+| `stats.unlisted_blobs` | `total_blobs_in_tree - listed_blobs`（因上限没看到的） |
+
+- 恒等式（代码内 assert，单测覆盖）：
+  - `files_scanned + files_skipped == listed_blobs`
+  - `listed_blobs + stats.unlisted_blobs == stats.total_blobs_in_tree`
+- `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 是全仓库 blob 中 `.bat/.cmd/.ps1/.vbs` 的实际数量，不受清单限额影响。
+- `files` 只返回 `files_scanned` 集合中按路径排序的前 50 条。
+- 耗时策略：`tree_ms > 45000` 时 `timing.tree_slow=true` 并打印 WARNING，页面顶部横幅提示「超大仓库，本次耗时较长」；`tree_ms > 90000` 才返回 `TIMEOUT`。不再在 60 秒处截杀。
 
 ## 第 1 步明确不做
 
-规则检测、评分、三卡报告、内容抽样/下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描；页面不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
+规则检测、评分、三卡报告、内容抽样/下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描；页面除一条耗时横幅外不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
 
 ## 测试
 

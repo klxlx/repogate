@@ -11,7 +11,7 @@
     <header class="masthead">
       <p class="eyebrow">RepoGate / 第 1 步：取数与文件清单</p>
       <h1>输入公开 GitHub 仓库地址，先看它真实长什么样</h1>
-      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；压缩包只在内存解析，不落盘。</p>
+      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；只请求仓库元信息、commit 与文件树，不下载任何文件内容。</p>
     </header>
 
     <form class="lookup" method="post" action="/">
@@ -37,6 +37,9 @@
     {% endif %}
 
     {% if result %}
+    {% if tree_slow %}
+    <section class="banner" role="status">超大仓库，本次耗时较长（文件树 {{ result.timing.tree_ms }} ms）</section>
+    {% endif %}
     <section class="panel">
       <div class="panel-head">
         <h2>{{ result.repo.full_name }}</h2>
@@ -99,7 +102,7 @@
 
     <footer class="foot">
       <p>单仓库最多 3 次 GitHub 请求：仓库元信息、默认分支 commit、git/trees。没有逐文件 contents 调用，也不下载文件内容。</p>
-      <p>跳过：.git / node_modules / vendor / dist / build / .venv，二进制与图片视频，压缩包，单文件大于 1MB。限额：解压总量 50MB、文件 2000 个。</p>
+      <p>统计口径：树内全部 blob 计入清单；清单内文本且 ≤1MB 才纳入分析，媒体/二进制/压缩包/超大文件只跳过分析、不跳过计数。清单硬顶：20000 个 blob（触发时按配置/脚本/说明文档/源码/其余的顺序采样）。</p>
     </footer>
   </main>
 </body>

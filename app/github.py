@@ -26,6 +26,9 @@ logger = logging.getLogger("repogate.github")
 GITHUB_API = "https://api.github.com"
 MAX_API_REQUESTS = 3
 MAX_REQUEST_ATTEMPTS = 4  # 仅 tree 按 commit_sha 失败时，允许回退分支名重试一次
+TREE_SLOW_MS = 45000  # 超过即标记 tree_slow，页面提示「超大仓库」
+TREE_HARD_TIMEOUT_MS = 90000  # 硬超时：90 秒仍未返回才报 TIMEOUT
+TREE_READ_TIMEOUT_S = 90.0
 USER_AGENT = "RepoGate/0.1 (repository intake inspection)"
 
 _OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
@@ -177,7 +180,7 @@ def _elapsed_ms(started_at: float) -> int:
 async def fetch_repo_bundle(raw_url: str) -> RepoBundle:
     owner, repo = parse_repo_url(raw_url)
 
-    limits = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+    limits = httpx.Timeout(connect=10.0, read=TREE_READ_TIMEOUT_S, write=30.0, pool=10.0)
     async with httpx.AsyncClient(timeout=limits) as client:
         gh = GitHubClient(client)
 
@@ -201,11 +204,16 @@ async def fetch_repo_bundle(raw_url: str) -> RepoBundle:
         tree, fallback = await gh.get_tree(owner, repo, sha, branch)
         tree_ms = _elapsed_ms(tree_started)
 
-        if tree_ms > 60000:
-            raise timeout(f"获取文件树超过 60 秒上限（tree_ms={tree_ms}）")
-        if tree_ms > 50000:
+        if tree_ms > TREE_HARD_TIMEOUT_MS:
+            raise timeout(f"获取文件树超过 90 秒上限（tree_ms={tree_ms}）")
+        tree_slow = tree_ms > TREE_SLOW_MS
+        if tree_slow:
             logger.warning(
-                "tree request slow tree_ms=%d repo=%s/%s", tree_ms, owner, repo
+                "tree request slow tree_ms=%d threshold_ms=%d repo=%s/%s",
+                tree_ms,
+                TREE_SLOW_MS,
+                owner,
+                repo,
             )
 
         entries = tree.get("tree")
@@ -227,5 +235,10 @@ async def fetch_repo_bundle(raw_url: str) -> RepoBundle:
             tree_ref_fallback=fallback,
             tree_truncated_by_github=bool(tree.get("truncated")),
             request_count=gh.request_count,
-            timing=TimingInfo(meta_ms=meta_ms, commit_ms=commit_ms, tree_ms=tree_ms),
+            timing=TimingInfo(
+                meta_ms=meta_ms,
+                commit_ms=commit_ms,
+                tree_ms=tree_ms,
+                tree_slow=tree_slow,
+            ),
         )

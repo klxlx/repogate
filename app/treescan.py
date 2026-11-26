@@ -9,8 +9,7 @@ from .errors import fetch_failed
 from .models import FileEntry, ScopeInfo, StatsInfo
 
 BLOB_CAP = 20000
-
-EXCLUDED_DIR_NAMES = frozenset({".git", "node_modules", "vendor", "dist", "build", ".venv"})
+MAX_ANALYZABLE_BYTES = 1024 * 1024  # 单文件分析上限：超过 1MB 的文本不进分析口径
 
 BINARY_EXTENSIONS = frozenset(
     {
@@ -75,11 +74,6 @@ def _is_safe_path(path: str) -> bool:
     return all(part not in ("", ".", "..") for part in path.split("/"))
 
 
-def _is_excluded_dir(path: str) -> bool:
-    parts = path.split("/")
-    return any(part in EXCLUDED_DIR_NAMES for part in parts[:-1])
-
-
 def _is_textizable(path: str) -> bool:
     ext = _extension(path)
     return ext not in BINARY_EXTENSIONS and ext not in MEDIA_EXTENSIONS and ext not in ARCHIVE_EXTENSIONS
@@ -104,6 +98,15 @@ def _priority(path: str) -> int:
     if ext in SOURCE_EXTENSIONS:
         return 4
     return 5
+
+
+def _is_analyzable(item: dict) -> bool:
+    """分析口径（v1.4 冻结）：路径安全已在 blobs 阶段校验，这里只看文本性与 1MB 上限。"""
+    return _is_textizable(item["path"]) and 0 <= _size(item) <= MAX_ANALYZABLE_BYTES
+
+
+def _size(item: dict) -> int:
+    return int(item.get("size") or 0)
 
 
 def _count_windows_scripts(entries: list[dict]) -> int:
@@ -160,26 +163,35 @@ def scan_tree(
         truncated = github_truncated
         reason = "github_tree_limit" if github_truncated else "none"
 
+    listed = selected
+    analyzable = [item for item in listed if _is_analyzable(item)]
+    files_scanned = len(analyzable)
+    files_skipped = len(listed) - files_scanned
+    unlisted_blobs = total_blobs - len(listed)
+
+    # 冻结口径的两个恒等式：进清单 = 纳入分析 + 被跳过；全树 = 进清单 + 没看到
+    assert files_scanned + files_skipped == len(listed)
+    assert len(listed) + unlisted_blobs == total_blobs
+
     scope = ScopeInfo(
-        files_scanned=len(selected),
-        files_skipped=total_blobs - len(selected),
-        bytes_scanned=sum(int(item.get("size") or 0) for item in selected),
+        files_scanned=files_scanned,
+        files_skipped=files_skipped,
+        bytes_scanned=sum(_size(item) for item in analyzable),
         truncated=truncated,
         truncate_reason=reason,
     )
     stats = StatsInfo(
-        text_files=sum(1 for item in selected if _is_textizable(item["path"])),
+        text_files=len(analyzable),
         windows_script_count=_count_windows_scripts(entries),
         total_blobs_in_tree=total_blobs,
-        listed_blobs=len(selected),
+        listed_blobs=len(listed),
+        bytes_total_listed=sum(_size(item) for item in listed),
+        unlisted_blobs=unlisted_blobs,
     )
 
     display_files = [
-        FileEntry(path=item["path"], size=int(item.get("size") or 0), is_text=True)
-        for item in selected
-        if not _is_excluded_dir(item["path"])
-        and _is_textizable(item["path"])
-        and int(item.get("size") or 0) <= 1024 * 1024
+        FileEntry(path=item["path"], size=_size(item), is_text=True)
+        for item in analyzable
     ]
     display_files.sort(key=lambda item: item.path)
     return TreeScanResult(scope=scope, stats=stats, files=display_files[:50])

@@ -21,7 +21,7 @@ def make_tree() -> dict:
     }
 
 
-def fake_bundle(fallback: bool = False, github_truncated: bool = False) -> RepoBundle:
+def fake_bundle(fallback: bool = False, github_truncated: bool = False, tree_slow: bool = False) -> RepoBundle:
     return RepoBundle(
         repo={
             "full_name": "octocat/Hello-World",
@@ -37,7 +37,7 @@ def fake_bundle(fallback: bool = False, github_truncated: bool = False) -> RepoB
         tree_ref_fallback=fallback,
         tree_truncated_by_github=github_truncated,
         request_count=3,
-        timing=TimingInfo(meta_ms=11, commit_ms=22, tree_ms=33),
+        timing=TimingInfo(meta_ms=11, commit_ms=22, tree_ms=33, tree_slow=tree_slow),
     )
 
 
@@ -85,6 +85,7 @@ def test_api_inspect_success(monkeypatch) -> None:
     assert len(body["commit_sha"]) == 40
     assert body["scope"]["files_scanned"] == 3
     assert body["scope"]["files_skipped"] == 0
+    assert body["scope"]["bytes_scanned"] == 20
     assert body["scope"]["truncated"] is False
     assert body["scope"]["truncate_reason"] == "none"
     assert body["stats"] == {
@@ -92,9 +93,39 @@ def test_api_inspect_success(monkeypatch) -> None:
         "windows_script_count": 0,
         "total_blobs_in_tree": 3,
         "listed_blobs": 3,
+        "bytes_total_listed": 20,
+        "unlisted_blobs": 0,
     }
-    assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33}
-    assert [item["path"] for item in body["files"]] == ["README.md", "src/main.py"]
+    assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33, "tree_slow": False}
+    assert [item["path"] for item in body["files"]] == [
+        "README.md",
+        "node_modules/x.js",
+        "src/main.py",
+    ]
+
+
+def test_api_identities_hold(monkeypatch) -> None:
+    async def fake_fetch(_: str) -> RepoBundle:
+        return fake_bundle()
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
+    scope, stats = body["scope"], body["stats"]
+    assert scope["files_scanned"] + scope["files_skipped"] == stats["listed_blobs"]
+    assert stats["listed_blobs"] + stats["unlisted_blobs"] == stats["total_blobs_in_tree"]
+
+
+def test_page_shows_slow_banner(monkeypatch) -> None:
+    async def fake_fetch(_: str) -> RepoBundle:
+        return fake_bundle(tree_slow=True)
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    response = client.post("/", data={"repo_url": "https://github.com/a/b"})
+
+    assert response.status_code == 200
+    assert "超大仓库，本次耗时较长" in response.text
 
 
 def test_api_passes_source_flags(monkeypatch) -> None:

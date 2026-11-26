@@ -101,6 +101,16 @@ h2 {
   background: #1e40af;
 }
 
+.banner {
+  margin-top: 20px;
+  padding: 10px 16px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  color: #1e3a8a;
+  font-size: 13px;
+}
+
 .alert {
   margin-top: 20px;
   padding: 16px 18px;

@@ -43,12 +43,15 @@ class StatsInfo(BaseModel):
     windows_script_count: int = 0
     total_blobs_in_tree: int = 0
     listed_blobs: int = 0
+    bytes_total_listed: int = 0
+    unlisted_blobs: int = 0
 
 
 class TimingInfo(BaseModel):
     meta_ms: int = 0
     commit_ms: int = 0
     tree_ms: int = 0
+    tree_slow: bool = False
 
 
 class InspectResponse(BaseModel):

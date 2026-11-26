@@ -88,6 +88,16 @@ async def _inspect(repo_url: str) -> InspectResponse:
         bundle.tree_truncated_by_github,
     )
 
+    logger.info(
+        "identities scanned=%d + skipped=%d == listed=%d ; listed=%d + unlisted=%d == total=%d",
+        scope.files_scanned,
+        scope.files_skipped,
+        stats.listed_blobs,
+        stats.listed_blobs,
+        stats.unlisted_blobs,
+        stats.total_blobs_in_tree,
+    )
+
     return InspectResponse(
         ok=True,
         provider="github",
@@ -146,7 +156,12 @@ async def index_submit(request: Request, repo_url: str = Form(...)) -> HTMLRespo
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"result": result, "error": None, "repo_url": repo_url},
+        {
+            "result": result,
+            "error": None,
+            "repo_url": repo_url,
+            "tree_slow": result.timing.tree_slow,
+        },
     )
 
 

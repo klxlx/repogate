@@ -18,7 +18,13 @@ def make_tree(items: list[dict], truncated: bool = False) -> dict:
     return {"sha": "root", "tree": items, "truncated": truncated, "url": "https://api.github.com/x"}
 
 
-def test_counts_all_blobs_as_listed() -> None:
+def assert_identities(result) -> None:
+    """v1.4 冻结恒等式：清单内=分析+跳过；全树=清单+未看到。"""
+    assert result.scope.files_scanned + result.scope.files_skipped == result.stats.listed_blobs
+    assert result.stats.listed_blobs + result.stats.unlisted_blobs == result.stats.total_blobs_in_tree
+
+
+def test_counts_all_blobs_as_listed_but_only_analyzable_as_scanned() -> None:
     payload = make_tree(
         [
             blob("README.md", 10),
@@ -31,16 +37,19 @@ def test_counts_all_blobs_as_listed() -> None:
 
     result = scan_tree(payload)
 
-    assert result.scope.files_scanned == 4
-    assert result.scope.files_skipped == 0
-    assert result.scope.bytes_scanned == 65
+    assert result.scope.files_scanned == 3
+    assert result.scope.files_skipped == 1
+    assert result.scope.bytes_scanned == 45
+    assert result.stats.bytes_total_listed == 65
     assert result.scope.truncated is False
     assert result.scope.truncate_reason == "none"
     assert result.stats.total_blobs_in_tree == 4
     assert result.stats.listed_blobs == 4
+    assert result.stats.unlisted_blobs == 0
     assert result.stats.text_files == 3
     assert result.stats.windows_script_count == 0
-    assert [item.path for item in result.files] == ["README.md", "src/app.py"]
+    assert [item.path for item in result.files] == ["README.md", "node_modules/x.js", "src/app.py"]
+    assert_identities(result)
 
 
 def test_blob_cap_samples_by_priority_not_alphabetical() -> None:
@@ -57,13 +66,15 @@ def test_blob_cap_samples_by_priority_not_alphabetical() -> None:
     result = scan_tree(payload, ScanLimits(blob_cap=2))
 
     assert result.scope.files_scanned == 2
-    assert result.scope.files_skipped == 3
+    assert result.scope.files_skipped == 0
     assert result.scope.bytes_scanned == 5
     assert result.scope.truncated is True
     assert result.scope.truncate_reason == "blob_cap"
     assert result.stats.total_blobs_in_tree == 5
     assert result.stats.listed_blobs == 2
+    assert result.stats.unlisted_blobs == 3
     assert [item.path for item in result.files] == ["mmm.yaml", "zzz.ps1"]
+    assert_identities(result)
 
 
 def test_no_truncation_when_blob_count_equals_cap() -> None:
@@ -72,8 +83,11 @@ def test_no_truncation_when_blob_count_equals_cap() -> None:
     result = scan_tree(payload, ScanLimits(blob_cap=3))
 
     assert result.scope.files_scanned == 3
+    assert result.scope.files_skipped == 0
     assert result.scope.truncated is False
     assert result.scope.truncate_reason == "none"
+    assert result.stats.unlisted_blobs == 0
+    assert_identities(result)
 
 
 def test_github_tree_truncation_uses_github_reason() -> None:
@@ -84,6 +98,8 @@ def test_github_tree_truncation_uses_github_reason() -> None:
     assert result.scope.truncated is True
     assert result.scope.truncate_reason == "github_tree_limit"
     assert result.stats.listed_blobs == 2
+    assert result.stats.unlisted_blobs == 0  # 上限在 GitHub 侧，我们看到的都进了清单
+    assert_identities(result)
 
 
 def test_github_tree_truncation_wins_over_blob_cap_reason() -> None:
@@ -94,6 +110,8 @@ def test_github_tree_truncation_wins_over_blob_cap_reason() -> None:
     assert result.scope.truncated is True
     assert result.scope.truncate_reason == "github_tree_limit"
     assert result.stats.listed_blobs == 2
+    assert result.stats.unlisted_blobs == 1
+    assert_identities(result)
 
 
 def test_keeps_only_fifty_display_files_sorted_by_path() -> None:
@@ -105,6 +123,7 @@ def test_keeps_only_fifty_display_files_sorted_by_path() -> None:
     assert len(result.files) == 50
     assert result.files[0].path == "file00.txt"
     assert result.files[-1].path == "file49.txt"
+    assert_identities(result)
 
 
 def test_counts_windows_scripts_across_whole_tree() -> None:
@@ -122,10 +141,16 @@ def test_counts_windows_scripts_across_whole_tree() -> None:
     assert result.scope.files_scanned == 4
     assert result.scope.files_skipped == 0
     assert result.stats.windows_script_count == 3
-    assert [item.path for item in result.files] == ["README.md", "tools/a.ps1"]
+    assert [item.path for item in result.files] == [
+        "README.md",
+        "dist/run.cmd",
+        "node_modules/install.bat",
+        "tools/a.ps1",
+    ]
+    assert_identities(result)
 
 
-def test_text_files_is_extension_based() -> None:
+def test_text_files_matches_files_scanned() -> None:
     payload = make_tree(
         [
             blob("README.md"),
@@ -138,7 +163,24 @@ def test_text_files_is_extension_based() -> None:
     result = scan_tree(payload)
 
     assert result.stats.text_files == 1
+    assert result.stats.text_files == result.scope.files_scanned
     assert result.stats.total_blobs_in_tree == 4
+    assert result.scope.files_skipped == 3
+    assert_identities(result)
+
+
+def test_oversized_text_file_is_skipped_from_analysis() -> None:
+    payload = make_tree([blob("big.log", 2 * 1024 * 1024), blob("small.log", 10)])
+
+    result = scan_tree(payload)
+
+    assert result.stats.listed_blobs == 2
+    assert result.scope.files_scanned == 1
+    assert result.scope.files_skipped == 1
+    assert result.scope.bytes_scanned == 10
+    assert result.stats.bytes_total_listed == 2 * 1024 * 1024 + 10
+    assert [item.path for item in result.files] == ["small.log"]
+    assert_identities(result)
 
 
 def test_unsafe_paths_are_not_counted_in_total() -> None:
@@ -148,6 +190,8 @@ def test_unsafe_paths_are_not_counted_in_total() -> None:
 
     assert result.stats.total_blobs_in_tree == 1
     assert result.scope.files_scanned == 1
+    assert result.stats.unlisted_blobs == 0
+    assert_identities(result)
 
 
 def test_invalid_tree_payload_raises_fetch_failed() -> None:

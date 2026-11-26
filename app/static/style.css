@@ -278,7 +278,7 @@ h2 {
   width: 132px;
 }
 
-.sev {
+.state {
   display: inline-block;
   padding: 1px 8px;
   border-radius: 999px;
@@ -286,24 +286,19 @@ h2 {
   font-weight: 600;
 }
 
-.sev-high {
+.state-pass {
+  background: #ecfdf3;
+  color: #067647;
+}
+
+.state-fail {
   background: var(--warn-soft);
   color: var(--warn);
 }
 
-.sev-medium {
+.state-degraded {
   background: #fffaeb;
   color: #b54708;
-}
-
-.sev-low {
-  background: #eff8ff;
-  color: #175cd3;
-}
-
-.sev-info {
-  background: #f2f4f7;
-  color: #475467;
 }
 
 .evidence {

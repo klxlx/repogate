@@ -1,14 +1,23 @@
-"""规则引擎：注册表、内容预取计划、结果合并。"""
+"""规则引擎：注册表、内容预取计划、结果合并、checks 与 findings 一致性。"""
 
 from __future__ import annotations
 
-from ..models import Finding
+from dataclasses import dataclass, field
+
+from ..masking import mask_evidence
+from ..models import Check, Finding
 from ..snapshot import Snapshot
 from .base import Rule
 from .deps import PARSEABLE_MANIFESTS, R03, R04, R05, _basename
 from .docs import R01, R02, find_root_readme
 
 RULES: tuple[Rule, ...] = (R01, R02, R03, R04, R05)
+
+
+@dataclass
+class Evaluation:
+    findings: list[Finding] = field(default_factory=list)
+    checks: list[Check] = field(default_factory=list)
 
 
 def plan_content_paths(snapshot: Snapshot) -> list[tuple[str, int]]:
@@ -46,10 +55,36 @@ def merge_findings(findings: list[Finding]) -> list[Finding]:
     return [merged[key] for key in order]
 
 
-def evaluate(snapshot: Snapshot) -> list[Finding]:
-    collected: list[Finding] = []
+def _assert_consistency(checks: list[Check], findings: list[Finding]) -> None:
+    """硬约束：fail 必须有 finding；pass 不许有 finding；每规则只出现一次。"""
+    rule_ids = [check.rule_id for check in checks]
+    assert len(rule_ids) == len(set(rule_ids)) == len(RULES), "checks 必须每条规则一条"
+    fail_rules = {check.rule_id for check in checks if check.status == "fail"}
+    pass_rules = {check.rule_id for check in checks if check.status == "pass"}
+    finding_rules = {finding.rule_id for finding in findings}
+    assert fail_rules <= finding_rules, "fail 规则缺少对应 finding"
+    assert not (pass_rules & finding_rules), "pass 规则不应有 finding"
+    for check in checks:
+        assert check.basis.strip(), f"{check.rule_id} 的 basis 不能为空"
+
+
+def evaluate(snapshot: Snapshot) -> Evaluation:
+    findings: list[Finding] = []
+    checks: list[Check] = []
     for rule in RULES:
-        finding = rule.detect(snapshot)
-        if finding is not None:
-            collected.append(finding)
-    return merge_findings(collected)
+        outcome = rule.detect(snapshot)
+        checks.append(
+            Check(
+                rule_id=rule.id,
+                status=outcome.status,
+                basis=mask_evidence(outcome.basis),
+                file=outcome.file,
+                line=outcome.line,
+            )
+        )
+        if outcome.finding is not None:
+            findings.append(outcome.finding)
+
+    merged = merge_findings(findings)
+    _assert_consistency(checks, merged)
+    return Evaluation(findings=merged, checks=checks)

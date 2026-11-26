@@ -102,27 +102,26 @@
     <section class="panel">
       <div class="panel-head">
         <h2>规则结论</h2>
-        <span class="note">{{ result.findings | length }} 条</span>
+        <span class="note">{{ result.checks | length }} 条</span>
       </div>
-      {% if result.findings %}
+      {% if result.checks %}
       <table class="findings">
         <thead>
-          <tr><th>规则</th><th>级别</th><th>结论</th><th>文件</th><th>证据</th></tr>
+          <tr><th>规则</th><th>状态</th><th>依据</th><th>文件</th></tr>
         </thead>
         <tbody>
-          {% for finding in result.findings %}
+          {% for check in result.checks %}
           <tr>
-            <td class="mono">{{ finding.rule_id }}</td>
-            <td><span class="sev sev-{{ finding.severity }}">{{ finding.severity }}</span></td>
-            <td>{{ finding.title }}</td>
-            <td class="mono">{{ finding.file or "—" }}</td>
-            <td class="evidence">{{ finding.evidence_masked }}</td>
+            <td class="mono">{{ check.rule_id }}</td>
+            <td><span class="state state-{{ check.status }}">{{ {"pass": "通过", "fail": "未通过", "degraded": "降级"}[check.status] }}</span></td>
+            <td class="evidence">{{ check.basis }}</td>
+            <td class="mono">{{ check.file or "—" }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <p class="empty">本次没有命中任何规则。</p>
+      <p class="empty">本次没有产生规则结论。</p>
       {% endif %}
     </section>
     {% endif %}

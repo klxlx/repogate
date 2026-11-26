@@ -14,7 +14,8 @@ MAX_FILES = 12
 MAX_TOTAL_BYTES = 3 * 1024 * 1024
 MAX_FILE_BYTES = 512 * 1024
 CONCURRENCY = 4
-REQUEST_TIMEOUT_S = 8.0
+REQUEST_TIMEOUT_S = 15.0
+MAX_ATTEMPTS = 2  # 超时与 5xx 重试一次；404 等直接失败
 
 logger = logging.getLogger("repogate.content")
 
@@ -69,25 +70,35 @@ async def fetch_contents(
         async def one(path: str) -> None:
             nonlocal request_count, byte_count
             async with semaphore:
-                request_count += 1
                 url = _raw_url(owner, repo, commit_sha, path)
-                try:
-                    response = await client.get(url)
-                except httpx.TimeoutException:
-                    failed.add(path)
-                    logger.warning("content timeout path=%s", path)
+                for attempt in range(MAX_ATTEMPTS):
+                    request_count += 1
+                    try:
+                        response = await client.get(url)
+                    except httpx.TimeoutException:
+                        if attempt + 1 < MAX_ATTEMPTS:
+                            logger.warning("content timeout, retrying path=%s", path)
+                            continue
+                        failed.add(path)
+                        logger.warning("content timeout path=%s", path)
+                        return
+                    except httpx.HTTPError as exc:
+                        failed.add(path)
+                        logger.warning("content error path=%s err=%s", path, exc.__class__.__name__)
+                        return
+                    if response.status_code >= 500 and attempt + 1 < MAX_ATTEMPTS:
+                        logger.warning(
+                            "content http %d, retrying path=%s", response.status_code, path
+                        )
+                        continue
+                    if response.status_code != 200:
+                        failed.add(path)
+                        logger.warning("content http %d path=%s", response.status_code, path)
+                        return
+                    body = response.content
+                    byte_count += len(body)
+                    contents[path] = body.decode("utf-8", errors="replace")
                     return
-                except httpx.HTTPError as exc:
-                    failed.add(path)
-                    logger.warning("content error path=%s err=%s", path, exc.__class__.__name__)
-                    return
-                if response.status_code != 200:
-                    failed.add(path)
-                    logger.warning("content http %d path=%s", response.status_code, path)
-                    return
-                body = response.content
-                byte_count += len(body)
-                contents[path] = body.decode("utf-8", errors="replace")
 
         await asyncio.gather(*(one(path) for path, _ in selected))
 

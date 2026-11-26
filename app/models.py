@@ -47,6 +47,8 @@ class StatsInfo(BaseModel):
     unlisted_blobs: int = 0
     content_requests: int = 0
     content_bytes: int = 0
+    content_failed: int = 0
+    content_files_available: int = 0
 
 
 class Finding(BaseModel):
@@ -75,6 +77,16 @@ class RuleInfo(BaseModel):
     needs_content: bool
 
 
+class Check(BaseModel):
+    """每条规则的三态结论：pass / fail / degraded，basis 必须可复核。"""
+
+    rule_id: str
+    status: Literal["pass", "fail", "degraded"]
+    basis: str
+    file: str = ""
+    line: int = 0
+
+
 class RulesResponse(BaseModel):
     rules: list[RuleInfo]
 
@@ -100,6 +112,7 @@ class InspectResponse(BaseModel):
     timing: TimingInfo
     files: list[FileEntry]
     findings: list[Finding] = Field(default_factory=list)
+    checks: list[Check] = Field(default_factory=list)
 
 
 class ErrorBody(BaseModel):

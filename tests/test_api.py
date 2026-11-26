@@ -108,6 +108,8 @@ def test_api_inspect_success(monkeypatch) -> None:
         "unlisted_blobs": 0,
         "content_requests": 0,
         "content_bytes": 0,
+        "content_failed": 0,
+        "content_files_available": 0,
     }
     assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33, "tree_slow": False}
     assert [item["path"] for item in body["files"]] == ["README.md", "src/main.py"]
@@ -158,13 +160,36 @@ def test_api_findings_carry_required_fields(monkeypatch) -> None:
 
     body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
 
-    assert len(body["findings"]) == 3
+    assert len(body["findings"]) == 2
     for finding in body["findings"]:
         assert finding["rule_id"]
         assert finding["evidence_masked"]
         assert finding["severity"] in {"high", "medium", "low", "info"}
         assert finding["confidence"] in {"high", "medium", "low"}
         assert "file" in finding and "line" in finding
+
+
+def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
+    async def fake_fetch(_: str) -> RepoBundle:
+        return fake_bundle()
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
+
+    checks = body["checks"]
+    assert [check["rule_id"] for check in checks] == ["R01", "R02", "R03", "R04", "R05"]
+    assert len(checks) == 5
+    for check in checks:
+        assert check["status"] in {"pass", "fail", "degraded"}
+        assert check["basis"].strip()
+        assert "file" in check and "line" in check
+
+    fail_rules = {check["rule_id"] for check in checks if check["status"] == "fail"}
+    pass_rules = {check["rule_id"] for check in checks if check["status"] == "pass"}
+    finding_rules = {finding["rule_id"] for finding in body["findings"]}
+    assert fail_rules <= finding_rules
+    assert not (pass_rules & finding_rules)
 
 
 def test_api_passes_source_flags(monkeypatch) -> None:

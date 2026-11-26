@@ -3,7 +3,14 @@ from __future__ import annotations
 import json
 
 from app.rules import evaluate
-from app.rules.deps import R03, R04, R05, detect_deps_missing, detect_deps_unpinned, detect_start_missing
+from app.rules.deps import (
+    R03,
+    R04,
+    R05,
+    detect_deps_missing,
+    detect_deps_unpinned,
+    detect_start_missing,
+)
 from app.rules.docs import R01, R02, detect_readme_incomplete, detect_readme_missing
 from app.snapshot import BlobRef, Snapshot
 
@@ -28,141 +35,179 @@ def snapshot(
 # ---------- R01 readme-missing ----------
 
 
-def test_r01_hits_when_no_readme() -> None:
-    finding = detect_readme_missing(snapshot({"src/app.py": 10}))
+def test_r01_fails_when_no_readme() -> None:
+    outcome = detect_readme_missing(snapshot({"src/app.py": 10}))
 
-    assert finding is not None
-    assert finding.rule_id == "R01"
-    assert finding.severity == "high"
-    assert finding.file == ""
-    assert "未找到 README" in finding.evidence_masked
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert outcome.finding.rule_id == "R01"
+    assert outcome.finding.severity == "high"
+    assert "根目录无 README" in outcome.basis
 
 
-def test_r01_misses_with_readme_variants() -> None:
-    assert detect_readme_missing(snapshot({"README.md": 10})) is None
-    assert detect_readme_missing(snapshot({"readme.rst": 10})) is None
-    assert detect_readme_missing(snapshot({"README": 10})) is None  # 无扩展 README 也算存在
+def test_r01_passes_with_readme_variants() -> None:
+    assert detect_readme_missing(snapshot({"README.md": 10})).status == "pass"
+    assert detect_readme_missing(snapshot({"readme.rst": 10})).status == "pass"
+    outcome = detect_readme_missing(snapshot({"README": 10}))
+    assert outcome.status == "pass"
+    assert "无扩展名" in outcome.basis
 
 
 # ---------- R02 readme-incomplete ----------
 
 
-def test_r02_hits_when_readme_has_less_than_two_categories() -> None:
-    finding = detect_readme_incomplete(
+def test_r02_fails_when_less_than_two_categories() -> None:
+    outcome = detect_readme_incomplete(
         snapshot({"README.md": 500}, {"README.md": "Hello World!"})
     )
 
-    assert finding is not None
-    assert finding.severity == "medium"
-    assert finding.file == "README.md"
-    assert "只覆盖 0 类" in finding.evidence_masked
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert "README 缺" in outcome.basis
 
 
-def test_r02_misses_with_install_and_run() -> None:
+def test_r02_passes_with_install_and_run() -> None:
     text = "# demo\n\n## Install\npip install demo\n\n## Usage\nrun demo\n"
-    assert detect_readme_incomplete(snapshot({"README.md": 500}, {"README.md": text})) is None
+    assert detect_readme_incomplete(snapshot({"README.md": 500}, {"README.md": text})).status == "pass"
 
 
-def test_r02_skips_when_r01_hit() -> None:
-    assert detect_readme_incomplete(snapshot({"src/app.py": 10})) is None
+def test_r02_degrades_without_readme() -> None:
+    outcome = detect_readme_incomplete(snapshot({"src/app.py": 10}))
+
+    assert outcome.status == "degraded"
+    assert outcome.finding is None
 
 
 def test_r02_degrades_when_content_unavailable() -> None:
-    finding = detect_readme_incomplete(snapshot({"README.md": 500}))
+    outcome = detect_readme_incomplete(snapshot({"README.md": 500}))
 
-    assert finding is not None
-    assert finding.severity == "info"
-    assert finding.confidence == "low"
-    assert "内容不可用" in finding.evidence_masked
+    assert outcome.status == "degraded"
+    assert outcome.finding is None  # 唯一依据失败，不出 finding
+    assert "读取失败" in outcome.basis
 
 
 # ---------- R03 deps-missing ----------
 
 
-def test_r03_hits_without_any_manifest() -> None:
-    finding = detect_deps_missing(snapshot({"README.md": 10, "src/app.py": 20}))
+def test_r03_fails_without_any_manifest() -> None:
+    outcome = detect_deps_missing(snapshot({"README.md": 10, "src/app.py": 20}))
 
-    assert finding is not None
-    assert finding.severity == "high"
-    assert "package.json" in finding.evidence_masked
-    assert finding.file == ""
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert "package.json" in outcome.finding.evidence_masked
 
 
-def test_r03_misses_with_manifest_variants() -> None:
-    assert detect_deps_missing(snapshot({"package.json": 10})) is None
-    assert detect_deps_missing(snapshot({"src/app.csproj": 10})) is None
-    assert detect_deps_missing(snapshot({"requirements-dev.txt": 10})) is None
-    assert detect_deps_missing(snapshot({"CMakeLists.txt": 10})) is None
+def test_r03_passes_with_manifest_variants() -> None:
+    outcome = detect_deps_missing(snapshot({"vcpkg.json": 10}))
+    assert outcome.status == "pass"
+    assert outcome.basis == "命中清单 vcpkg.json"
+    assert detect_deps_missing(snapshot({"src/app.csproj": 10})).status == "pass"
+    assert detect_deps_missing(snapshot({"requirements-dev.txt": 10})).status == "pass"
+    assert detect_deps_missing(snapshot({"CMakeLists.txt": 10})).status == "pass"
 
 
 # ---------- R04 deps-unpinned ----------
 
 
-def test_r04_hits_when_mostly_floating() -> None:
+def test_r04_fails_when_mostly_floating() -> None:
     text = json.dumps({"dependencies": {"a": "^1.0.0", "b": "~2.0.0"}})
-    finding = detect_deps_unpinned(snapshot({"package.json": 100}, {"package.json": text}))
+    outcome = detect_deps_unpinned(snapshot({"package.json": 100}, {"package.json": text}))
 
-    assert finding is not None
-    assert finding.severity == "low"
-    assert finding.file == "package.json"
-    assert "浮动 2 个 / 总计 2 个" in finding.evidence_masked
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert "浮动 2 个 / 总计 2 个" in outcome.basis
 
 
-def test_r04_misses_when_pinned() -> None:
+def test_r04_passes_when_pinned() -> None:
     text = json.dumps({"dependencies": {"a": "1.0.0", "b": "2.0.0"}})
-    assert detect_deps_unpinned(snapshot({"package.json": 100}, {"package.json": text})) is None
+    assert detect_deps_unpinned(snapshot({"package.json": 100}, {"package.json": text})).status == "pass"
 
 
-def test_r04_misses_when_lockfile_exists() -> None:
+def test_r04_passes_when_lockfile_exists() -> None:
     text = json.dumps({"dependencies": {"a": "^1.0.0", "b": "^2.0.0"}})
     paths = {"package.json": 100, "package-lock.json": 5000}
-    assert detect_deps_unpinned(snapshot(paths, {"package.json": text})) is None
+    outcome = detect_deps_unpinned(snapshot(paths, {"package.json": text}))
+    assert outcome.status == "pass"
+    assert "package-lock.json" in outcome.basis
 
 
-def test_r04_degrades_when_content_unavailable() -> None:
-    finding = detect_deps_unpinned(snapshot({"package.json": 100}))
+def test_r04_degrades_when_all_manifests_unreadable() -> None:
+    outcome = detect_deps_unpinned(snapshot({"package.json": 100}))
 
-    assert finding is not None
-    assert finding.severity == "info"
-    assert "内容不可用" in finding.evidence_masked
+    assert outcome.status == "degraded"
+    assert outcome.finding is None
+
+
+def test_r04_degrades_when_partial_manifests_unreadable() -> None:
+    text = json.dumps({"dependencies": {"a": "^1.0.0", "b": "~2.0.0"}})
+    paths = {"package.json": 100, "pyproject.toml": 50}
+    outcome = detect_deps_unpinned(snapshot(paths, {"package.json": text}))
+
+    assert outcome.status == "degraded"
+    assert outcome.finding is not None
+    assert outcome.finding.severity == "info"
+    assert "pyproject.toml 读取失败" in outcome.basis
 
 
 # ---------- R05 start-missing ----------
 
 
-def test_r05_hits_without_launch_entry() -> None:
-    finding = detect_start_missing(snapshot({"README.md": 10}))
+def test_r05_fails_without_any_entry() -> None:
+    outcome = detect_start_missing(snapshot({"README.md": 10}))
 
-    assert finding is not None
-    assert finding.severity == "medium"
-    assert "Makefile / Dockerfile" in finding.evidence_masked
+    assert outcome.status == "fail"
+    assert outcome.finding is not None
+    assert "根目录与一层子目录未找到" in outcome.basis
 
 
-def test_r05_misses_with_dockerfile_or_script() -> None:
-    assert detect_start_missing(snapshot({"Dockerfile": 10})) is None
-    assert detect_start_missing(snapshot({"docker-compose.yml": 10})) is None
+def test_r05_passes_with_cross_platform_entries() -> None:
+    assert detect_start_missing(snapshot({"Dockerfile": 10})).status == "pass"
+    assert detect_start_missing(snapshot({"docker-compose.yml": 10})).status == "pass"
+    assert detect_start_missing(snapshot({"Makefile": 10})).status == "pass"
+
     scripts = json.dumps({"scripts": {"dev": "vite"}})
-    assert (
-        detect_start_missing(snapshot({"package.json": 100}, {"package.json": scripts})) is None
-    )
+    outcome = detect_start_missing(snapshot({"package.json": 100}, {"package.json": scripts}))
+    assert outcome.status == "pass"
+    assert outcome.basis == "命中入口 package.json:scripts.dev"
+
+
+def test_r05_passes_with_windows_entries_and_marks_impact() -> None:
+    outcome = detect_start_missing(snapshot({"PowerToys.slnx": 88348}))
+
+    assert outcome.status == "pass"
+    assert "PowerToys.slnx" in outcome.basis
+    assert "Windows 专用" in outcome.basis
+
+    assert detect_start_missing(snapshot({"App.csproj": 10})).status == "pass"
+    assert detect_start_missing(snapshot({"build.ps1": 10})).status == "pass"
+
+
+def test_r05_ignores_nested_csproj_and_cmake() -> None:
+    assert detect_start_missing(snapshot({"src/App.csproj": 10})).status == "fail"
+    assert detect_start_missing(snapshot({"src/CMakeLists.txt": 10})).status == "fail"
 
 
 def test_r05_degrades_when_package_json_unreadable() -> None:
-    finding = detect_start_missing(snapshot({"package.json": 100}))
+    outcome = detect_start_missing(snapshot({"package.json": 100}))
 
-    assert finding is not None
-    assert finding.severity == "info"
+    assert outcome.status == "degraded"
+    assert outcome.finding is None
 
 
 # ---------- 引擎 ----------
 
 
-def test_evaluate_merges_same_rule_and_file() -> None:
-    snapshot_obj = snapshot()
-    findings = evaluate(snapshot_obj)
+def test_evaluate_returns_check_per_rule_and_consistent_findings() -> None:
+    evaluation = evaluate(snapshot())
 
-    assert [finding.rule_id for finding in findings] == ["R01", "R03", "R05"]
-    assert len({finding.id for finding in findings}) == 3
+    assert len(evaluation.checks) == 5
+    assert [check.rule_id for check in evaluation.checks] == ["R01", "R02", "R03", "R04", "R05"]
+    assert all(check.basis.strip() for check in evaluation.checks)
+    fail_rules = {check.rule_id for check in evaluation.checks if check.status == "fail"}
+    finding_rules = {finding.rule_id for finding in evaluation.findings}
+    pass_rules = {check.rule_id for check in evaluation.checks if check.status == "pass"}
+    assert fail_rules <= finding_rules
+    assert not (pass_rules & finding_rules)
 
 
 def test_rule_metadata_matches_contract() -> None:

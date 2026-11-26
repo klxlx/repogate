@@ -63,3 +63,54 @@ def test_caps_file_count() -> None:
 
     assert result.requests == MAX_FILES
     assert len(result.contents) == MAX_FILES
+
+
+def flaky_transport(mode: str) -> httpx.MockTransport:
+    state = {"attempts": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["attempts"] += 1
+        if state["attempts"] == 1:
+            if mode == "timeout":
+                raise httpx.ReadTimeout("boom", request=request)
+            return httpx.Response(503)
+        return httpx.Response(200, text="ok")
+
+    return httpx.MockTransport(handler)
+
+
+def test_retries_once_on_timeout() -> None:
+    result = asyncio.run(
+        fetch_contents(
+            "owner", "repo", SHA, [("README.md", 10)], transport=flaky_transport("timeout")
+        )
+    )
+
+    assert result.requests == 2
+    assert result.contents == {"README.md": "ok"}
+    assert result.failed == frozenset()
+
+
+def test_retries_once_on_5xx() -> None:
+    result = asyncio.run(
+        fetch_contents(
+            "owner", "repo", SHA, [("README.md", 10)], transport=flaky_transport("5xx")
+        )
+    )
+
+    assert result.requests == 2
+    assert result.contents == {"README.md": "ok"}
+
+
+def test_timeout_twice_is_failed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("boom", request=request)
+
+    result = asyncio.run(
+        fetch_contents(
+            "owner", "repo", SHA, [("README.md", 10)], transport=httpx.MockTransport(handler)
+        )
+    )
+
+    assert result.requests == 2
+    assert result.failed == frozenset({"README.md"})

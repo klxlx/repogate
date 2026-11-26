@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Literal
 
 from ..masking import mask_evidence
 from ..models import Finding, RuleInfo
 from ..snapshot import Snapshot
+
+OutcomeStatus = Literal["pass", "fail", "degraded"]
+
+
+@dataclass
+class RuleOutcome:
+    """一条规则的判定结果：状态 + 可复核依据 + 可选 finding。"""
+
+    status: OutcomeStatus
+    basis: str
+    finding: Finding | None = None
+    file: str = ""
+    line: int = 0
 
 
 @dataclass(frozen=True)
@@ -18,7 +31,7 @@ class Rule:
     severity: str
     points: int
     needs_content: bool
-    detect: Callable[[Snapshot], Finding | None]
+    detect: Callable[[Snapshot], RuleOutcome]
 
     def info(self) -> RuleInfo:
         return RuleInfo(
@@ -59,6 +72,39 @@ def make_finding(
     )
 
 
+def passed(rule: Rule, basis: str, *, file: str = "", line: int = 0) -> RuleOutcome:
+    return RuleOutcome(status="pass", basis=basis, file=file, line=line)
+
+
+def failed(rule: Rule, basis: str, finding: Finding) -> RuleOutcome:
+    """fail 必须携带 finding，保证 checks 与 findings 对得上。"""
+    return RuleOutcome(
+        status="fail",
+        basis=basis,
+        finding=finding,
+        file=finding.file,
+        line=finding.line,
+    )
+
+
+def degraded(
+    rule: Rule,
+    basis: str,
+    *,
+    finding: Finding | None = None,
+    file: str = "",
+    line: int = 0,
+) -> RuleOutcome:
+    """结论不完整：不许当 pass；依据文件全失败时可以不带 finding。"""
+    return RuleOutcome(
+        status="degraded",
+        basis=basis,
+        finding=finding,
+        file=file or (finding.file if finding else ""),
+        line=line or (finding.line if finding else 0),
+    )
+
+
 def degraded_finding(
     rule: Rule,
     *,
@@ -70,7 +116,7 @@ def degraded_finding(
     line: int = 0,
     detail: str = "",
 ) -> Finding:
-    """内容拉取失败：结论降级为 info，保留规则位置但显式标注不可判定。"""
+    """部分依据可用时仍输出 info Finding，显式标注结论不完整。"""
     evidence = f"内容不可用（{reason}），无法完整判定"
     if detail:
         evidence = f"{evidence}：{detail}"

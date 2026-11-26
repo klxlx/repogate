@@ -83,16 +83,20 @@ async def _inspect(repo_url: str) -> InspectResponse:
     )
     snapshot.contents = dict(content.contents)
     snapshot.failed_paths = content.failed
-    findings = evaluate(snapshot)
+    evaluation = evaluate(snapshot)
+    findings = evaluation.findings
+    checks = evaluation.checks
 
     scope = scan.scope
     stats = scan.stats
     stats.content_requests = content.requests
     stats.content_bytes = content.bytes
+    stats.content_failed = len(content.failed)
+    stats.content_files_available = len(content.contents)
     timing = bundle.timing
     logger.info(
         "inspect ok repo=%s ref=%s sha=%s requests=%d content_requests=%d content_bytes=%d "
-        "files=%d skipped=%d findings=%d scripts=%d "
+        "content_failed=%d content_ok=%d files=%d skipped=%d findings=%d scripts=%d "
         "timing=%d/%d/%d truncated=%s fallback=%s github_truncated=%s",
         bundle.repo.get("full_name"),
         bundle.ref,
@@ -100,6 +104,8 @@ async def _inspect(repo_url: str) -> InspectResponse:
         bundle.request_count,
         stats.content_requests,
         stats.content_bytes,
+        stats.content_failed,
+        stats.content_files_available,
         scope.files_scanned,
         scope.files_skipped,
         len(findings),
@@ -110,6 +116,11 @@ async def _inspect(repo_url: str) -> InspectResponse:
         scope.truncated,
         bundle.tree_ref_fallback,
         bundle.tree_truncated_by_github,
+    )
+
+    logger.info(
+        "checks %s",
+        " ".join(f"{check.rule_id}={check.status}" for check in checks),
     )
 
     logger.info(
@@ -140,6 +151,7 @@ async def _inspect(repo_url: str) -> InspectResponse:
         timing=timing,
         files=scan.files,
         findings=findings,
+        checks=checks,
     )
 
 

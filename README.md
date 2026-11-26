@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖缺陷。当前完成**第 2 步：规则引擎骨架 + R01–R05（文档与依赖规则）**，尚未实现评分、三卡报告、平台与密钥规则。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖缺陷。当前完成**第 2 步（补强 v1.6）：规则引擎 + R01–R05 + checks 三态**，尚未实现评分、三卡报告、平台与密钥规则。
 
 ## 快速开始（Windows）
 
@@ -44,10 +44,17 @@ python3.13 -m venv .venv
   "ref": "main",
   "commit_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
   "scope": {"files_scanned": 123, "files_skipped": 7, "bytes_scanned": 664038, "truncated": false, "truncate_reason": "none"},
-  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 3, "content_bytes": 2993},
+  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 3, "content_bytes": 6397, "content_failed": 0, "content_files_available": 3},
   "timing": {"meta_ms": 1662, "commit_ms": 565, "tree_ms": 529, "tree_slow": false},
   "files": [{"path": ".coveragerc", "size": 33, "is_text": true}],
-  "findings": []
+  "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "docs/requirements.txt", "line": 0, "evidence_masked": "浮动 4 个 / 总计 5 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high"}],
+  "checks": [
+    {"rule_id": "R01", "status": "pass", "basis": "命中 README（根目录）", "file": "README.md", "line": 0},
+    {"rule_id": "R02", "status": "pass", "basis": "README 覆盖 2 类说明：A 安装/构建、C 配置/环境", "file": "README.md", "line": 0},
+    {"rule_id": "R03", "status": "pass", "basis": "命中清单 docs/requirements.txt", "file": "docs/requirements.txt", "line": 0},
+    {"rule_id": "R04", "status": "fail", "basis": "浮动 4 个 / 总计 5 个（>50%），无 lockfile", "file": "docs/requirements.txt", "line": 0},
+    {"rule_id": "R05", "status": "pass", "basis": "命中入口 Makefile", "file": "Makefile", "line": 0}
+  ]
 }
 ```
 
@@ -113,23 +120,38 @@ python3.13 -m venv .venv
 
 | id | slug | dimension | severity | points | needs_content | 判定口径 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R01 | readme-missing | docs | high | -10 | 否 | 根目录无 `README.md/.markdown/.rst/.txt`（大小写不敏感，无扩展 `README` 视为存在） |
+| R01 | readme-missing | docs | high | -10 | 否 | 根目录无 README（接受 `.md/.markdown/.rst/.txt` 与无扩展名 `README`，大小写不敏感） |
 | R02 | readme-incomplete | docs | medium | -4 | 是 | R01 未命中时，README 前 20KB 覆盖 <2 类：A 安装构建 / B 运行使用 / C 配置环境 / D 依赖前置 |
-| R03 | deps-missing | deps | high | -8 | 否 | 根与一层子目录无任何依赖清单（含 `.sln` / `.csproj` / `vcpkg.json` / `CMakeLists.txt`） |
+| R03 | deps-missing | deps | high | -8 | 否 | 根与一层子目录无任何依赖清单（含 `.sln/.slnx` / `.csproj` / `vcpkg.json` / `CMakeLists.txt`） |
 | R04 | deps-unpinned | deps | low | -2 | 是 | 无 lockfile 且浮动版本 >50%（只解析 `package.json` / `requirements.txt` / `pyproject.toml`） |
-| R05 | start-missing | deps | medium | -4 | 是 | 根与一层无 `Makefile` / `Dockerfile` / `docker-compose*`，且 `package.json` 无 `start/dev/serve` |
+| R05 | start-missing | deps | medium | -4 | 是 | 根与一层无 `package.json:scripts.start/dev/serve`、`Makefile`、`Dockerfile`、`docker-compose*`、`*.sln/.slnx`；根无 `CMakeLists.txt` / `build.ps1` / `build.bat` / `build.sh` / `*.csproj` |
 
 - 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
 - 事实型规则（缺文件）`file=""`、`line=0`，evidence 固定写「未找到 X（已检查根目录与一层子目录）」。
 - 同 `rule_id` + 同 `file` 合并为一条，累加 `hit_count`；`category` 当前与 `dimension` 同值。
 - 所有 evidence 统一走 `app/masking.py::mask_evidence`：token/密码形态、本机绝对路径脱敏，超 240 字符截断。
 
+### checks 三态
+
+`/api/inspect` 与页面都按规则逐条输出 `checks`，每条规则出现且只出现一次：
+
+| status | 含义 | 与 findings 的关系 |
+| --- | --- | --- |
+| `pass` | 通过 | 不允许有对应 finding |
+| `fail` | 未通过 | 必须具备一条对应 finding |
+| `degraded` | 降级：依据文件读取失败，结论不完整 | 部分依据可用时输出 info finding；全部依据失败时只在 checks 记 degraded，不出 finding |
+
+- `basis` 必须可复核，写具体文件名或路径：
+  - `命中入口 PowerToys.slnx（Windows 专用构建入口，Linux/容器环境需替代方案）`
+  - `pyproject.toml 读取失败，仅按 requirements.txt 判断，结论不完整`
+- R05 命中 Windows 专用入口（`.sln` / `.slnx` / `.csproj` / `build.ps1` / `build.bat`）时，basis 标注「Linux/容器环境需替代方案」；同一文案常量 `WINDOWS_ONLY_IMPACT` 留给第 3 步 R06/R07。
+
 ## 内容读取层
 
 - 只读 `https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}`，不调用 contents API。
-- 配额：≤12 个文件、≤3MB 总量、并发 4、单文件超时 8s、单文件 ≤512KB；本步只读 README 与 `package.json` / `requirements.txt` / `pyproject.toml`。
-- 请求失败、超时、超配额：该文件标为不可用；依赖内容的规则降级为 `severity=info`、`confidence=low`，不出假结论、不使接口失败。
-- `stats.content_requests` / `stats.content_bytes` 单独统计 raw 拉取；`request_count` 仍只算 api.github.com。
+- 配额：≤12 个文件、≤3MB 总量、并发 4、单文件超时 15s、单文件 ≤512KB；超时与 5xx 各重试 1 次，404 不重试。本步只读 README 与 `package.json` / `requirements.txt` / `pyproject.toml`。
+- 请求失败、超时、超配额：该文件标为不可用；依赖内容的规则**不得输出肯定结论**，一律 `degraded` + `confidence=low`，说明「缺 X 文件内容，结论不完整」。
+- `stats.content_requests` / `stats.content_bytes` / `stats.content_failed` / `stats.content_files_available` 单独统计 raw 拉取；`request_count` 仍只算 api.github.com。
 
 ## 当前明确不做
 

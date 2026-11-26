@@ -1,4 +1,4 @@
-"""R03 / R04 / R05：依赖清单存在性、版本浮动、启动入口。"""
+"""R03 / R04 / R05：依赖清单存在性、版本浮动、构建/启动入口。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,15 @@ import re
 import tomllib
 
 from ..snapshot import BlobRef, Snapshot
-from .base import Rule, degraded_finding, make_finding
+from .base import (
+    Rule,
+    RuleOutcome,
+    degraded,
+    degraded_finding,
+    failed,
+    make_finding,
+    passed,
+)
 
 MANIFEST_EXACT = frozenset(
     {
@@ -18,11 +26,11 @@ MANIFEST_EXACT = frozenset(
         "CMakeLists.txt",
     }
 )
-MANIFEST_GLOBS = ("requirements*.txt", "*.csproj", "*.sln")
+MANIFEST_GLOBS = ("requirements*.txt", "*.csproj", "*.sln", "*.slnx")
 MANIFEST_LABELS = (
     "package.json、requirements*.txt、pyproject.toml、setup.py、setup.cfg、Pipfile、"
     "go.mod、pom.xml、build.gradle(.kts)、Cargo.toml、composer.json、Gemfile、"
-    "*.csproj、*.sln、vcpkg.json、conanfile.txt/.py、CMakeLists.txt"
+    "*.csproj、*.sln/.slnx、vcpkg.json、conanfile.txt/.py、CMakeLists.txt"
 )
 
 LOCKFILES = frozenset(
@@ -30,11 +38,18 @@ LOCKFILES = frozenset(
 )
 PARSEABLE_MANIFESTS = frozenset({"package.json", "requirements.txt", "pyproject.toml"})
 
-LAUNCH_EXACT = frozenset({"Makefile", "Dockerfile"})
-LAUNCH_GLOBS = ("docker-compose*.yml", "docker-compose*.yaml")
+LAUNCH_FILES = frozenset({"Makefile", "Dockerfile"})
+COMPOSE_GLOBS = ("docker-compose*.yml", "docker-compose*.yaml")
+WINDOWS_BUILD_FILES = frozenset({"build.ps1", "build.bat"})
+WINDOWS_ONLY_IMPACT = "存在构建入口，但为 Windows 专用，Linux/容器环境需替代方案"
 
 _OPERATOR_RE = re.compile(r"(==|>=|<=|~=|!=|>|<)")
 _FLOATING_PREFIXES = ("^", "~", "*", ">", "latest")
+
+# 入口检测优先级：容器/通用构建优先，Windows 专用入口最后
+_ENTRY_ORDER = (
+    "compose", "dockerfile", "makefile", "sln", "cmake", "build_win", "build_sh", "csproj",
+)
 
 
 def _basename(path: str) -> str:
@@ -115,21 +130,29 @@ def _is_floating(spec: str) -> bool:
     return text.startswith(_FLOATING_PREFIXES)
 
 
-def detect_deps_missing(snapshot: Snapshot):
-    if find_manifests(snapshot):
-        return None
-    return make_finding(
+def detect_deps_missing(snapshot: Snapshot) -> RuleOutcome:
+    manifests = find_manifests(snapshot)
+    if manifests:
+        paths = [blob.path for blob in manifests]
+        shown = "、".join(paths[:3])
+        if len(paths) > 3:
+            shown = f"{shown} 等 {len(paths)} 个"
+        return passed(R03, f"命中清单 {shown}", file=paths[0])
+
+    finding = make_finding(
         R03,
         title="缺少依赖清单",
         evidence=f"未找到以下候选清单文件（已检查根目录与一层子目录）：{MANIFEST_LABELS}",
         impact="无法判断依赖来源与版本，供应链风险不可评估",
         fix="补充标准依赖清单（requirements.txt / pyproject.toml / package.json 等）",
     )
+    return failed(R03, "根目录与一层子目录未找到任何依赖清单（候选 18 种）", finding)
 
 
-def detect_deps_unpinned(snapshot: Snapshot):
-    if find_lockfile(snapshot) is not None:
-        return None
+def detect_deps_unpinned(snapshot: Snapshot) -> RuleOutcome:
+    lockfile = find_lockfile(snapshot)
+    if lockfile is not None:
+        return passed(R04, f"存在 lockfile {lockfile}", file=lockfile)
 
     parseable = [
         blob
@@ -137,7 +160,7 @@ def detect_deps_unpinned(snapshot: Snapshot):
         if _basename(blob.path) in PARSEABLE_MANIFESTS
     ]
     if not parseable:
-        return None  # 没有可解析清单，交给 R03
+        return passed(R04, "无 package.json/requirements.txt/pyproject.toml，规则不适用")
 
     specs: list[str] = []
     unavailable: list[str] = []
@@ -157,92 +180,136 @@ def detect_deps_unpinned(snapshot: Snapshot):
         specs.extend(parsed)
 
     if primary is None:
-        return degraded_finding(
+        return degraded(
             R04,
-            reason="依赖清单内容拉取失败或解析失败",
-            title="依赖版本浮动无法判定",
-            impact="无法判断是否存在大面积浮动版本",
-            fix="检查 raw 内容是否可达，或人工复核依赖清单",
+            f"全部依赖清单读取失败（{'、'.join(unavailable)}），结论缺失",
             file=unavailable[0] if unavailable else "",
-            detail=f"涉及 {len(unavailable)} 个清单文件",
+        )
+
+    if unavailable:
+        finding = degraded_finding(
+            R04,
+            reason=f"{'、'.join(unavailable)} 读取失败",
+            title="依赖版本浮动无法完整判定",
+            impact="缺失部分清单，浮动比例可能被低估",
+            fix="检查 raw 内容是否可达，或人工复核依赖清单",
+            file=primary,
+        )
+        return degraded(
+            R04,
+            f"{'、'.join(unavailable)} 读取失败，仅按 {primary} 判断，结论不完整",
+            finding=finding,
+            file=primary,
         )
 
     total = len(specs)
     if total == 0:
-        return None
+        return passed(R04, "清单未声明任何依赖，无需判定浮动", file=primary)
+
     floating = sum(1 for spec in specs if _is_floating(spec))
     if floating / total <= 0.5:
-        return None
+        return passed(R04, f"浮动 {floating} 个 / 总计 {total} 个（≤50%），无 lockfile", file=primary)
 
-    note = f"；{len(unavailable)} 个清单内容不可用、未计入" if unavailable else ""
-    return make_finding(
+    finding = make_finding(
         R04,
         title="依赖版本大面积浮动",
         evidence=(
             f"浮动 {floating} 个 / 总计 {total} 个；未发现 lockfile"
-            f"（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）{note}"
+            f"（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）"
         ),
         impact="构建结果不可复现，依赖漂移可能引入不可控风险",
         fix="固定依赖版本，并提交对应 lockfile",
         file=primary,
     )
+    return failed(R04, f"浮动 {floating} 个 / 总计 {total} 个（>50%），无 lockfile", finding)
 
 
-def detect_start_missing(snapshot: Snapshot):
+def _tree_entry(snapshot: Snapshot) -> tuple[str, str] | None:
+    """按优先级返回 tree 中可见的入口；返回 (kind, path)。"""
+    buckets: dict[str, list[str]] = {key: [] for key in _ENTRY_ORDER}
     for blob in snapshot.shallow_blobs():
-        name = _basename(blob.path)
-        if name in LAUNCH_EXACT or any(
-            fnmatch.fnmatchcase(name, pattern) for pattern in LAUNCH_GLOBS
-        ):
-            return None
+        path = blob.path
+        name = _basename(path)
+        root = "/" not in path
+        if any(fnmatch.fnmatchcase(name, pattern) for pattern in COMPOSE_GLOBS):
+            buckets["compose"].append(path)
+        elif name == "Dockerfile":
+            buckets["dockerfile"].append(path)
+        elif name == "Makefile":
+            buckets["makefile"].append(path)
+        elif fnmatch.fnmatchcase(name, "*.sln") or fnmatch.fnmatchcase(name, "*.slnx"):
+            buckets["sln"].append(path)
+        elif name == "CMakeLists.txt" and root:
+            buckets["cmake"].append(path)
+        elif root and name in WINDOWS_BUILD_FILES:
+            buckets["build_win"].append(path)
+        elif root and name == "build.sh":
+            buckets["build_sh"].append(path)
+        elif root and fnmatch.fnmatchcase(name, "*.csproj"):
+            buckets["csproj"].append(path)
+    for kind in _ENTRY_ORDER:
+        if buckets[kind]:
+            return kind, sorted(buckets[kind])[0]
+    return None
+
+
+def _entry_basis(kind: str, path: str) -> str:
+    if kind in {"sln", "build_win", "csproj"}:
+        return f"命中入口 {path}（Windows 专用构建入口，Linux/容器环境需替代方案）"
+    if kind == "cmake":
+        return f"命中入口 {path}（根目录 CMake 构建）"
+    if kind == "build_sh":
+        return f"命中入口 {path}（根目录 shell 构建脚本）"
+    if kind == "compose":
+        return f"命中入口 {path}（docker-compose）"
+    return f"命中入口 {path}"
+
+
+def detect_start_missing(snapshot: Snapshot) -> RuleOutcome:
+    entry = _tree_entry(snapshot)
+    if entry is not None:
+        kind, path = entry
+        return passed(R05, _entry_basis(kind, path), file=path)
 
     package_blobs = [
         blob for blob in snapshot.shallow_blobs() if _basename(blob.path) == "package.json"
     ]
-    degraded: list[str] = []
+    unreadable: list[str] = []
     for blob in package_blobs:
         text = snapshot.contents.get(blob.path)
         if text is None:
-            degraded.append(blob.path)
+            unreadable.append(blob.path)
             continue
         try:
             data = json.loads(text)
         except (json.JSONDecodeError, ValueError):
-            degraded.append(blob.path)
+            unreadable.append(blob.path)
             continue
         scripts = data.get("scripts") if isinstance(data, dict) else None
-        if isinstance(scripts, dict) and any(
-            key in scripts for key in ("start", "dev", "serve")
-        ):
-            return None
+        if isinstance(scripts, dict):
+            for key in ("start", "dev", "serve"):
+                if key in scripts:
+                    return passed(R05, f"命中入口 {blob.path}:scripts.{key}", file=blob.path)
 
-    if degraded:
-        return degraded_finding(
+    if unreadable:
+        return degraded(
             R05,
-            reason="package.json 内容拉取失败",
-            title="启动入口无法判定",
-            impact="无法确认服务如何启动，部署与验证成本不确定",
-            fix="检查 raw 内容是否可达，或人工确认启动方式",
-            file=degraded[0],
-            detail="package.json 的 scripts 未参与判定",
+            f"{'、'.join(unreadable)} 读取失败，缺启动脚本信息，结论不完整",
+            file=unreadable[0],
         )
 
-    has_package = bool(package_blobs)
-    package_note = (
-        "package.json 未声明 start/dev/serve"
-        if has_package
-        else "没有 package.json 可提供 scripts"
-    )
-    return make_finding(
+    finding = make_finding(
         R05,
-        title="缺少可识别的启动入口",
+        title="缺少可识别的构建/启动入口",
         evidence=(
-            f"未找到 Makefile / Dockerfile / docker-compose*.yml/*.yaml；"
-            f"{package_note}（已检查根目录与一层子目录）"
+            "未找到 Makefile / Dockerfile / docker-compose* / *.sln(.slnx) / CMakeLists.txt / "
+            "build.ps1 / build.bat / build.sh / 根目录 *.csproj，"
+            "package.json 也未声明 start/dev/serve（已检查根目录与一层子目录）"
         ),
-        impact="无法确认服务如何启动，部署与验证成本高",
-        fix="补充 Makefile 或 Dockerfile，或在 package.json 声明 start/dev/serve",
+        impact="无法确认服务如何构建与启动，部署与验证成本高",
+        fix="补充 Dockerfile / Makefile 或构建脚本，或在 package.json 声明 start/dev/serve",
     )
+    return failed(R05, "根目录与一层子目录未找到任何构建/启动入口", finding)
 
 
 R03 = Rule(

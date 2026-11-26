@@ -1,26 +1,27 @@
 from __future__ import annotations
 
-import io
-import zipfile
-
 from fastapi.testclient import TestClient
 from starlette.testclient import TestClient as StarletteTestClient
 
 from app import main
 from app.errors import not_found, rate_limited, timeout
 from app.github import RepoBundle
+from app.models import TimingInfo
 
 
-def make_zip() -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("octocat-Hello-World-abc123/README.md", b"hello\n")
-        archive.writestr("octocat-Hello-World-abc123/node_modules/x.js", b"skip\n")
-        archive.writestr("octocat-Hello-World-abc123/src/main.py", b"print(1)\n")
-    return buffer.getvalue()
+def make_tree() -> dict:
+    return {
+        "sha": "root",
+        "truncated": False,
+        "tree": [
+            {"path": "README.md", "type": "blob", "size": 6, "sha": "x"},
+            {"path": "node_modules/x.js", "type": "blob", "size": 5, "sha": "x"},
+            {"path": "src/main.py", "type": "blob", "size": 9, "sha": "x"},
+        ],
+    }
 
 
-def fake_bundle() -> RepoBundle:
+def fake_bundle(fallback: bool = False, github_truncated: bool = False) -> RepoBundle:
     return RepoBundle(
         repo={
             "full_name": "octocat/Hello-World",
@@ -32,10 +33,11 @@ def fake_bundle() -> RepoBundle:
         },
         ref="master",
         commit_sha="a" * 40,
-        zip_bytes=make_zip(),
-        truncated=False,
-        truncate_reason=None,
-        requests_used=3,
+        tree=make_tree(),
+        tree_ref_fallback=fallback,
+        tree_truncated_by_github=github_truncated,
+        request_count=3,
+        timing=TimingInfo(meta_ms=11, commit_ms=22, tree_ms=33),
     )
 
 
@@ -70,13 +72,37 @@ def test_api_inspect_success(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
+    assert body["provider"] == "github"
+    assert body["request_count"] == 3
+    assert body["mode"] == "metadata"
+    assert body["source"] == {
+        "method": "trees_api",
+        "tree_ref_fallback": False,
+        "tree_truncated_by_github": False,
+    }
     assert body["repo"]["full_name"] == "octocat/Hello-World"
     assert body["ref"] == "master"
     assert len(body["commit_sha"]) == 40
     assert body["scope"]["files_scanned"] == 2
     assert body["scope"]["files_skipped"] == 1
     assert body["scope"]["truncated"] is False
+    assert body["stats"] == {"text_files": 2, "windows_script_count": 0}
+    assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33}
     assert [item["path"] for item in body["files"]] == ["README.md", "src/main.py"]
+
+
+def test_api_passes_source_flags(monkeypatch) -> None:
+    async def fake_fetch(_: str) -> RepoBundle:
+        return fake_bundle(fallback=True, github_truncated=True)
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    response = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"})
+
+    assert response.status_code == 200
+    source = response.json()["source"]
+    assert source["tree_ref_fallback"] is True
+    assert source["tree_truncated_by_github"] is True
 
 
 def test_api_inspect_accepts_url_alias(monkeypatch) -> None:

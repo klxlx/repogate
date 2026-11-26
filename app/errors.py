@@ -33,5 +33,9 @@ def upstream(message: str = "访问 GitHub 失败，请稍后重试") -> ScanErr
     return ScanError("UPSTREAM_ERROR", message, 502)
 
 
+def fetch_failed(message: str = "获取仓库文件树失败，请稍后重试") -> ScanError:
+    return ScanError("FETCH_FAILED", message, 502)
+
+
 def internal(message: str = "服务内部错误，请稍后重试") -> ScanError:
     return ScanError("INTERNAL_ERROR", message, 502)

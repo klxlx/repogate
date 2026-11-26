@@ -30,12 +30,35 @@ class FileEntry(BaseModel):
     is_text: bool
 
 
+class SourceInfo(BaseModel):
+    method: str = "trees_api"
+    tree_ref_fallback: bool = False
+    tree_truncated_by_github: bool = False
+
+
+class StatsInfo(BaseModel):
+    text_files: int = 0
+    windows_script_count: int = 0
+
+
+class TimingInfo(BaseModel):
+    meta_ms: int = 0
+    commit_ms: int = 0
+    tree_ms: int = 0
+
+
 class InspectResponse(BaseModel):
     ok: bool = True
+    provider: str = "github"
+    request_count: int = 0
+    source: SourceInfo
+    mode: str = "metadata"
     repo: RepoInfo
     ref: str
     commit_sha: str
     scope: ScopeInfo
+    stats: StatsInfo
+    timing: TimingInfo
     files: list[FileEntry]
 
 

@@ -14,8 +14,8 @@ from fastapi.templating import Jinja2Templates
 
 from .errors import ScanError, internal
 from .github import fetch_repo_bundle
-from .models import InspectRequest, InspectResponse, RepoInfo, ScopeInfo
-from .zipscan import ScanResult, scan_zip
+from .models import InspectRequest, InspectResponse, RepoInfo, SourceInfo
+from .treescan import scan_tree
 
 BASE_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger("repogate")
@@ -65,33 +65,45 @@ templates.env.filters["filesize"] = _filesize
 
 async def _inspect(repo_url: str) -> InspectResponse:
     bundle = await fetch_repo_bundle(repo_url)
-
-    if bundle.zip_bytes is None:
-        scan = ScanResult(
-            scope=ScopeInfo(truncated=True, truncate_reason=bundle.truncate_reason),
-            files=[],
-        )
-    else:
-        scan = scan_zip(bundle.zip_bytes)
+    scan = scan_tree(bundle.tree)
 
     scope = scan.scope
+    stats = scan.stats
+    timing = bundle.timing
     logger.info(
-        "inspect ok repo=%s ref=%s sha=%s requests=%d files=%d skipped=%d truncated=%s",
+        "inspect ok repo=%s ref=%s sha=%s requests=%d files=%d skipped=%d scripts=%d "
+        "timing=%d/%d/%d truncated=%s fallback=%s github_truncated=%s",
         bundle.repo.get("full_name"),
         bundle.ref,
         bundle.commit_sha,
-        bundle.requests_used,
+        bundle.request_count,
         scope.files_scanned,
         scope.files_skipped,
+        stats.windows_script_count,
+        timing.meta_ms,
+        timing.commit_ms,
+        timing.tree_ms,
         scope.truncated,
+        bundle.tree_ref_fallback,
+        bundle.tree_truncated_by_github,
     )
 
     return InspectResponse(
         ok=True,
+        provider="github",
+        request_count=bundle.request_count,
+        source=SourceInfo(
+            method="trees_api",
+            tree_ref_fallback=bundle.tree_ref_fallback,
+            tree_truncated_by_github=bundle.tree_truncated_by_github,
+        ),
+        mode="metadata",
         repo=RepoInfo(**bundle.repo),
         ref=bundle.ref,
         commit_sha=bundle.commit_sha,
         scope=scope,
+        stats=stats,
+        timing=timing,
         files=scan.files,
     )
 

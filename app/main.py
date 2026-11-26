@@ -12,9 +12,18 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .content import fetch_contents
 from .errors import ScanError, internal
-from .github import fetch_repo_bundle
-from .models import InspectRequest, InspectResponse, RepoInfo, SourceInfo
+from .github import fetch_repo_bundle, parse_repo_url
+from .models import (
+    InspectRequest,
+    InspectResponse,
+    RepoInfo,
+    RulesResponse,
+    SourceInfo,
+)
+from .rules import RULES, evaluate, plan_content_paths
+from .snapshot import build_snapshot
 from .treescan import scan_tree
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -64,21 +73,36 @@ templates.env.filters["filesize"] = _filesize
 
 
 async def _inspect(repo_url: str) -> InspectResponse:
+    owner, repo = parse_repo_url(repo_url)
     bundle = await fetch_repo_bundle(repo_url)
     scan = scan_tree(bundle.tree, github_truncated=bundle.tree_truncated_by_github)
 
+    snapshot = build_snapshot(bundle, owner, repo)
+    content = await fetch_contents(
+        owner, repo, bundle.commit_sha, plan_content_paths(snapshot)
+    )
+    snapshot.contents = dict(content.contents)
+    snapshot.failed_paths = content.failed
+    findings = evaluate(snapshot)
+
     scope = scan.scope
     stats = scan.stats
+    stats.content_requests = content.requests
+    stats.content_bytes = content.bytes
     timing = bundle.timing
     logger.info(
-        "inspect ok repo=%s ref=%s sha=%s requests=%d files=%d skipped=%d scripts=%d "
+        "inspect ok repo=%s ref=%s sha=%s requests=%d content_requests=%d content_bytes=%d "
+        "files=%d skipped=%d findings=%d scripts=%d "
         "timing=%d/%d/%d truncated=%s fallback=%s github_truncated=%s",
         bundle.repo.get("full_name"),
         bundle.ref,
         bundle.commit_sha,
         bundle.request_count,
+        stats.content_requests,
+        stats.content_bytes,
         scope.files_scanned,
         scope.files_skipped,
+        len(findings),
         stats.windows_script_count,
         timing.meta_ms,
         timing.commit_ms,
@@ -115,6 +139,7 @@ async def _inspect(repo_url: str) -> InspectResponse:
         stats=stats,
         timing=timing,
         files=scan.files,
+        findings=findings,
     )
 
 
@@ -130,6 +155,11 @@ async def healthz() -> dict:
 @app.post("/api/inspect", response_model=InspectResponse)
 async def api_inspect(payload: InspectRequest) -> InspectResponse:
     return await _inspect(payload.repo_url)
+
+
+@app.get("/api/rules", response_model=RulesResponse)
+async def api_rules() -> RulesResponse:
+    return RulesResponse(rules=[rule.info() for rule in RULES])
 
 
 @app.get("/", response_class=HTMLResponse)

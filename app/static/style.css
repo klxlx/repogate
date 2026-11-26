@@ -244,13 +244,13 @@ h2 {
   font-size: 12px;
 }
 
-.files {
+.files, .findings {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
 
-.files thead th {
+.files thead th, .findings thead th {
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
@@ -259,10 +259,56 @@ h2 {
   text-align: left;
 }
 
-.files tbody td {
+.files tbody td, .findings tbody td {
   padding: 7px 10px;
   border-bottom: 1px solid #f1f3f5;
   vertical-align: top;
+}
+
+.findings th:first-child, .findings td:first-child {
+  width: 56px;
+  white-space: nowrap;
+}
+
+.findings th:nth-child(2), .findings td:nth-child(2) {
+  width: 76px;
+}
+
+.findings th:nth-child(4), .findings td:nth-child(4) {
+  width: 132px;
+}
+
+.sev {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sev-high {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.sev-medium {
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.sev-low {
+  background: #eff8ff;
+  color: #175cd3;
+}
+
+.sev-info {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.evidence {
+  color: #475467;
+  font-size: 12.5px;
 }
 
 .files tbody tr:last-child td {

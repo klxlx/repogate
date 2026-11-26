@@ -37,18 +37,18 @@ def test_counts_all_blobs_as_listed_but_only_analyzable_as_scanned() -> None:
 
     result = scan_tree(payload)
 
-    assert result.scope.files_scanned == 3
-    assert result.scope.files_skipped == 1
-    assert result.scope.bytes_scanned == 45
+    assert result.scope.files_scanned == 2
+    assert result.scope.files_skipped == 2
+    assert result.scope.bytes_scanned == 40
     assert result.stats.bytes_total_listed == 65
     assert result.scope.truncated is False
     assert result.scope.truncate_reason == "none"
     assert result.stats.total_blobs_in_tree == 4
     assert result.stats.listed_blobs == 4
     assert result.stats.unlisted_blobs == 0
-    assert result.stats.text_files == 3
+    assert result.stats.text_files == 2
     assert result.stats.windows_script_count == 0
-    assert [item.path for item in result.files] == ["README.md", "node_modules/x.js", "src/app.py"]
+    assert [item.path for item in result.files] == ["README.md", "src/app.py"]
     assert_identities(result)
 
 
@@ -138,15 +138,10 @@ def test_counts_windows_scripts_across_whole_tree() -> None:
 
     result = scan_tree(payload)
 
-    assert result.scope.files_scanned == 4
-    assert result.scope.files_skipped == 0
+    assert result.scope.files_scanned == 2
+    assert result.scope.files_skipped == 2
     assert result.stats.windows_script_count == 3
-    assert [item.path for item in result.files] == [
-        "README.md",
-        "dist/run.cmd",
-        "node_modules/install.bat",
-        "tools/a.ps1",
-    ]
+    assert [item.path for item in result.files] == ["README.md", "tools/a.ps1"]
     assert_identities(result)
 
 

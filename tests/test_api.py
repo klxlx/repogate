@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import TestClient as StarletteTestClient
 
 from app import main
+from app.content import ContentResult
 from app.errors import not_found, rate_limited, timeout
 from app.github import RepoBundle
 from app.models import TimingInfo
+
+
+@pytest.fixture(autouse=True)
+def stub_content(monkeypatch):
+    """所有接口测试都不打 raw：内容层返回空，规则按降级路径走。"""
+    async def fake_contents(owner, repo, sha, wanted, transport=None):
+        return ContentResult(contents={}, failed=frozenset(), requests=0, bytes=0)
+
+    monkeypatch.setattr(main, "fetch_contents", fake_contents)
 
 
 def make_tree() -> dict:
@@ -83,25 +94,23 @@ def test_api_inspect_success(monkeypatch) -> None:
     assert body["repo"]["full_name"] == "octocat/Hello-World"
     assert body["ref"] == "master"
     assert len(body["commit_sha"]) == 40
-    assert body["scope"]["files_scanned"] == 3
-    assert body["scope"]["files_skipped"] == 0
-    assert body["scope"]["bytes_scanned"] == 20
+    assert body["scope"]["files_scanned"] == 2
+    assert body["scope"]["files_skipped"] == 1
+    assert body["scope"]["bytes_scanned"] == 15
     assert body["scope"]["truncated"] is False
     assert body["scope"]["truncate_reason"] == "none"
     assert body["stats"] == {
-        "text_files": 3,
+        "text_files": 2,
         "windows_script_count": 0,
         "total_blobs_in_tree": 3,
         "listed_blobs": 3,
         "bytes_total_listed": 20,
         "unlisted_blobs": 0,
+        "content_requests": 0,
+        "content_bytes": 0,
     }
     assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33, "tree_slow": False}
-    assert [item["path"] for item in body["files"]] == [
-        "README.md",
-        "node_modules/x.js",
-        "src/main.py",
-    ]
+    assert [item["path"] for item in body["files"]] == ["README.md", "src/main.py"]
 
 
 def test_api_identities_hold(monkeypatch) -> None:
@@ -126,6 +135,36 @@ def test_page_shows_slow_banner(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "超大仓库，本次耗时较长" in response.text
+
+
+def test_api_rules_registry() -> None:
+    response = client.get("/api/rules")
+
+    assert response.status_code == 200
+    rules = response.json()["rules"]
+    assert [rule["id"] for rule in rules] == ["R01", "R02", "R03", "R04", "R05"]
+    for rule in rules:
+        assert set(rule) == {"id", "dimension", "severity", "points", "needs_content"}
+    assert rules[0]["points"] == -10
+    assert rules[0]["needs_content"] is False
+    assert rules[1]["needs_content"] is True
+
+
+def test_api_findings_carry_required_fields(monkeypatch) -> None:
+    async def fake_fetch(_: str) -> RepoBundle:
+        return fake_bundle()
+
+    monkeypatch.setattr(main, "fetch_repo_bundle", fake_fetch)
+
+    body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
+
+    assert len(body["findings"]) == 3
+    for finding in body["findings"]:
+        assert finding["rule_id"]
+        assert finding["evidence_masked"]
+        assert finding["severity"] in {"high", "medium", "low", "info"}
+        assert finding["confidence"] in {"high", "medium", "low"}
+        assert "file" in finding and "line" in finding
 
 
 def test_api_passes_source_flags(monkeypatch) -> None:

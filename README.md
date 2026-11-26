@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，先回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件。当前完成**第 1 步（收尾 v1.4）：git/trees 元数据清单 + BLOB_CAP 采样 + 口径恒等式**，尚未实现规则、评分与报告页。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖缺陷。当前完成**第 2 步：规则引擎骨架 + R01–R05（文档与依赖规则）**，尚未实现评分、三卡报告、平台与密钥规则。
 
 ## 快速开始（Windows）
 
@@ -27,8 +27,9 @@ python3.13 -m venv .venv
 | 入口 | 说明 |
 |---|---|
 | `GET /healthz` | 返回 `{"ok": true}` |
-| `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段 |
-| `GET /` | 单页表单，提交后同页展示结果 |
+| `POST /api/inspect` | JSON 请求体 `{"repo_url": "https://github.com/owner/repo"}`，兼容 `url` 字段；响应含 `findings` |
+| `GET /api/rules` | 规则注册表：`id / dimension / severity / points / needs_content` |
+| `GET /` | 单页表单，提交后同页展示结果与规则结论 |
 
 成功响应结构（requests 实例，字段名冻结）：
 
@@ -43,9 +44,30 @@ python3.13 -m venv .venv
   "ref": "main",
   "commit_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
   "scope": {"files_scanned": 123, "files_skipped": 7, "bytes_scanned": 664038, "truncated": false, "truncate_reason": "none"},
-  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0},
+  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 3, "content_bytes": 2993},
   "timing": {"meta_ms": 1662, "commit_ms": 565, "tree_ms": 529, "tree_slow": false},
-  "files": [{"path": ".coveragerc", "size": 33, "is_text": true}]
+  "files": [{"path": ".coveragerc", "size": 33, "is_text": true}],
+  "findings": []
+}
+```
+
+`findings` 单条字段（最终 schema，后续步骤不再改）：
+
+```json
+{
+  "id": "R03-deps-missing",
+  "rule_id": "R03",
+  "category": "deps",
+  "dimension": "deps",
+  "severity": "high",
+  "title": "缺少依赖清单",
+  "file": "",
+  "line": 0,
+  "evidence_masked": "未找到以下候选清单文件（已检查根目录与一层子目录）：package.json、……",
+  "impact": "无法判断依赖来源与版本，供应链风险不可评估",
+  "fix": "补充标准依赖清单（requirements.txt / pyproject.toml / package.json 等）",
+  "hit_count": 1,
+  "confidence": "high"
 }
 ```
 
@@ -71,7 +93,7 @@ python3.13 -m venv .venv
 | --- | --- |
 | `stats.total_blobs_in_tree` | 仓库 tree 里的全部 blob 数（分母） |
 | `stats.listed_blobs` | 进入清单的 blob 数（受 `BLOB_CAP=20000` 限制） |
-| `scope.files_scanned` | 通过过滤、真正纳入分析的文件数（文本、路径安全、单文件 ≤1MB） |
+| `scope.files_scanned` | 通过过滤、真正纳入分析的文件数（文本、路径安全、单文件 ≤1MB、路径不含排除目录段） |
 | `scope.files_skipped` | `listed_blobs - files_scanned`（媒体 / 二进制 / 超大 / 无效路径） |
 | `scope.bytes_scanned` | `files_scanned` 的 `size` 之和（分析口径，不代表下载量） |
 | `stats.bytes_total_listed` | `listed_blobs` 的 `size` 之和（清单口径） |
@@ -82,11 +104,36 @@ python3.13 -m venv .venv
   - `listed_blobs + stats.unlisted_blobs == stats.total_blobs_in_tree`
 - `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 是全仓库 blob 中 `.bat/.cmd/.ps1/.vbs` 的实际数量，不受清单限额影响。
 - `files` 只返回 `files_scanned` 集合中按路径排序的前 50 条。
+- 排除目录段（任意一段命中即整条跳过）：`.git` / `node_modules` / `vendor` / `dist` / `build` / `.venv` / `venv` / `__pycache__` / `.pytest_cache` / `.idea` / `.vs` / `obj`。
 - 耗时策略：`tree_ms > 45000` 时 `timing.tree_slow=true` 并打印 WARNING，页面顶部横幅提示「超大仓库，本次耗时较长」；`tree_ms > 90000` 才返回 `TIMEOUT`。不再在 60 秒处截杀。
 
-## 第 1 步明确不做
+## 规则引擎（第 2 步）
 
-规则检测、评分、三卡报告、内容抽样/下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描；页面除一条耗时横幅外不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
+`GET /api/rules` 返回注册表，代码在 `app/rules/`：
+
+| id | slug | dimension | severity | points | needs_content | 判定口径 |
+| --- | --- | --- | --- | --- | --- | --- |
+| R01 | readme-missing | docs | high | -10 | 否 | 根目录无 `README.md/.markdown/.rst/.txt`（大小写不敏感，无扩展 `README` 视为存在） |
+| R02 | readme-incomplete | docs | medium | -4 | 是 | R01 未命中时，README 前 20KB 覆盖 <2 类：A 安装构建 / B 运行使用 / C 配置环境 / D 依赖前置 |
+| R03 | deps-missing | deps | high | -8 | 否 | 根与一层子目录无任何依赖清单（含 `.sln` / `.csproj` / `vcpkg.json` / `CMakeLists.txt`） |
+| R04 | deps-unpinned | deps | low | -2 | 是 | 无 lockfile 且浮动版本 >50%（只解析 `package.json` / `requirements.txt` / `pyproject.toml`） |
+| R05 | start-missing | deps | medium | -4 | 是 | 根与一层无 `Makefile` / `Dockerfile` / `docker-compose*`，且 `package.json` 无 `start/dev/serve` |
+
+- 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
+- 事实型规则（缺文件）`file=""`、`line=0`，evidence 固定写「未找到 X（已检查根目录与一层子目录）」。
+- 同 `rule_id` + 同 `file` 合并为一条，累加 `hit_count`；`category` 当前与 `dimension` 同值。
+- 所有 evidence 统一走 `app/masking.py::mask_evidence`：token/密码形态、本机绝对路径脱敏，超 240 字符截断。
+
+## 内容读取层
+
+- 只读 `https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}`，不调用 contents API。
+- 配额：≤12 个文件、≤3MB 总量、并发 4、单文件超时 8s、单文件 ≤512KB；本步只读 README 与 `package.json` / `requirements.txt` / `pyproject.toml`。
+- 请求失败、超时、超配额：该文件标为不可用；依赖内容的规则降级为 `severity=info`、`confidence=low`，不出假结论、不使接口失败。
+- `stats.content_requests` / `stats.content_bytes` 单独统计 raw 拉取；`request_count` 仍只算 api.github.com。
+
+## 当前明确不做
+
+评分、等级、三卡报告、平台/密钥规则、golden 快照、内容全量下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描；页面除一条耗时横幅外不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
 
 ## 测试
 

@@ -9,9 +9,9 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <p class="eyebrow">RepoGate / 第 1 步：取数与文件清单</p>
+      <p class="eyebrow">RepoGate / 第 2 步：规则引擎 R01–R05</p>
       <h1>输入公开 GitHub 仓库地址，先看它真实长什么样</h1>
-      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；只请求仓库元信息、commit 与文件树，不下载任何文件内容。</p>
+      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；只按需读取少量说明与依赖清单，不下载其它文件内容。</p>
     </header>
 
     <form class="lookup" method="post" action="/">
@@ -98,10 +98,37 @@
       <p class="empty">本次没有扫描到符合条件的文本文件。</p>
       {% endif %}
     </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>规则结论</h2>
+        <span class="note">{{ result.findings | length }} 条</span>
+      </div>
+      {% if result.findings %}
+      <table class="findings">
+        <thead>
+          <tr><th>规则</th><th>级别</th><th>结论</th><th>文件</th><th>证据</th></tr>
+        </thead>
+        <tbody>
+          {% for finding in result.findings %}
+          <tr>
+            <td class="mono">{{ finding.rule_id }}</td>
+            <td><span class="sev sev-{{ finding.severity }}">{{ finding.severity }}</span></td>
+            <td>{{ finding.title }}</td>
+            <td class="mono">{{ finding.file or "—" }}</td>
+            <td class="evidence">{{ finding.evidence_masked }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">本次没有命中任何规则。</p>
+      {% endif %}
+    </section>
     {% endif %}
 
     <footer class="foot">
-      <p>单仓库最多 3 次 GitHub 请求：仓库元信息、默认分支 commit、git/trees。没有逐文件 contents 调用，也不下载文件内容。</p>
+      <p>单仓库最多 3 次 GitHub API 请求：仓库元信息、默认分支 commit、git/trees；另从 raw.githubusercontent 读取 ≤12 个说明/清单文件（≤3MB、并发 4、单文件 ≤512KB），不调用 contents API、不下载其它文件内容。</p>
       <p>统计口径：树内全部 blob 计入清单；清单内文本且 ≤1MB 才纳入分析，媒体/二进制/压缩包/超大文件只跳过分析、不跳过计数。清单硬顶：20000 个 blob（触发时按配置/脚本/说明文档/源码/其余的顺序采样）。</p>
     </footer>
   </main>

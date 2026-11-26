@@ -45,6 +45,38 @@ class StatsInfo(BaseModel):
     listed_blobs: int = 0
     bytes_total_listed: int = 0
     unlisted_blobs: int = 0
+    content_requests: int = 0
+    content_bytes: int = 0
+
+
+class Finding(BaseModel):
+    """一条规则命中结论；字段即最终 schema，后续步骤不再改。"""
+
+    id: str
+    rule_id: str
+    category: str
+    dimension: str
+    severity: Literal["high", "medium", "low", "info"]
+    title: str
+    file: str = ""
+    line: int = 0
+    evidence_masked: str
+    impact: str
+    fix: str
+    hit_count: int = 1
+    confidence: Literal["high", "medium", "low"] = "high"
+
+
+class RuleInfo(BaseModel):
+    id: str
+    dimension: str
+    severity: str
+    points: int
+    needs_content: bool
+
+
+class RulesResponse(BaseModel):
+    rules: list[RuleInfo]
 
 
 class TimingInfo(BaseModel):
@@ -67,6 +99,7 @@ class InspectResponse(BaseModel):
     stats: StatsInfo
     timing: TimingInfo
     files: list[FileEntry]
+    findings: list[Finding] = Field(default_factory=list)
 
 
 class ErrorBody(BaseModel):

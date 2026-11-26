@@ -11,6 +11,13 @@ from .models import FileEntry, ScopeInfo, StatsInfo
 BLOB_CAP = 20000
 MAX_ANALYZABLE_BYTES = 1024 * 1024  # 单文件分析上限：超过 1MB 的文本不进分析口径
 
+EXCLUDED_DIR_NAMES = frozenset(
+    {
+        ".git", "node_modules", "vendor", "dist", "build", ".venv", "venv",
+        "__pycache__", ".pytest_cache", ".idea", ".vs", "obj",
+    }
+)
+
 BINARY_EXTENSIONS = frozenset(
     {
         ".bin", ".exe", ".dll", ".so", ".dylib", ".a", ".lib", ".obj", ".o",
@@ -68,7 +75,7 @@ def _extension(path: str) -> str:
     return posixpath.splitext(path)[1].lower()
 
 
-def _is_safe_path(path: str) -> bool:
+def is_safe_path(path: str) -> bool:
     if not path or path.startswith("/"):
         return False
     return all(part not in ("", ".", "..") for part in path.split("/"))
@@ -100,9 +107,18 @@ def _priority(path: str) -> int:
     return 5
 
 
+def is_excluded_dir(path: str) -> bool:
+    """路径中任一目录段命中排除名单（最后一段是文件名，不参与）。"""
+    return any(part in EXCLUDED_DIR_NAMES for part in path.split("/")[:-1])
+
+
 def _is_analyzable(item: dict) -> bool:
-    """分析口径（v1.4 冻结）：路径安全已在 blobs 阶段校验，这里只看文本性与 1MB 上限。"""
-    return _is_textizable(item["path"]) and 0 <= _size(item) <= MAX_ANALYZABLE_BYTES
+    """分析口径（v1.5 冻结）：文本、≤1MB、路径不含排除目录段。"""
+    return (
+        not is_excluded_dir(item["path"])
+        and _is_textizable(item["path"])
+        and 0 <= _size(item) <= MAX_ANALYZABLE_BYTES
+    )
 
 
 def _size(item: dict) -> int:
@@ -150,7 +166,7 @@ def scan_tree(
         if isinstance(item, dict)
         and item.get("type") == "blob"
         and isinstance(item.get("path"), str)
-        and _is_safe_path(item["path"])
+        and is_safe_path(item["path"])
     ]
     total_blobs = len(blobs)
 

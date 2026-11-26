@@ -65,7 +65,7 @@ templates.env.filters["filesize"] = _filesize
 
 async def _inspect(repo_url: str) -> InspectResponse:
     bundle = await fetch_repo_bundle(repo_url)
-    scan = scan_tree(bundle.tree)
+    scan = scan_tree(bundle.tree, github_truncated=bundle.tree_truncated_by_github)
 
     scope = scan.scope
     stats = scan.stats

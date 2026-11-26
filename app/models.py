@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
@@ -21,7 +23,7 @@ class ScopeInfo(BaseModel):
     files_skipped: int = 0
     bytes_scanned: int = 0
     truncated: bool = False
-    truncate_reason: str | None = None
+    truncate_reason: Literal["none", "github_tree_limit", "blob_cap"] = "none"
 
 
 class FileEntry(BaseModel):
@@ -39,6 +41,8 @@ class SourceInfo(BaseModel):
 class StatsInfo(BaseModel):
     text_files: int = 0
     windows_script_count: int = 0
+    total_blobs_in_tree: int = 0
+    listed_blobs: int = 0
 
 
 class TimingInfo(BaseModel):

@@ -201,6 +201,13 @@ async def fetch_repo_bundle(raw_url: str) -> RepoBundle:
         tree, fallback = await gh.get_tree(owner, repo, sha, branch)
         tree_ms = _elapsed_ms(tree_started)
 
+        if tree_ms > 60000:
+            raise timeout(f"获取文件树超过 60 秒上限（tree_ms={tree_ms}）")
+        if tree_ms > 50000:
+            logger.warning(
+                "tree request slow tree_ms=%d repo=%s/%s", tree_ms, owner, repo
+            )
+
         entries = tree.get("tree")
         if not isinstance(entries, list):
             raise fetch_failed("文件树结构异常（缺少 tree 数组）")

@@ -83,10 +83,16 @@ def test_api_inspect_success(monkeypatch) -> None:
     assert body["repo"]["full_name"] == "octocat/Hello-World"
     assert body["ref"] == "master"
     assert len(body["commit_sha"]) == 40
-    assert body["scope"]["files_scanned"] == 2
-    assert body["scope"]["files_skipped"] == 1
+    assert body["scope"]["files_scanned"] == 3
+    assert body["scope"]["files_skipped"] == 0
     assert body["scope"]["truncated"] is False
-    assert body["stats"] == {"text_files": 2, "windows_script_count": 0}
+    assert body["scope"]["truncate_reason"] == "none"
+    assert body["stats"] == {
+        "text_files": 3,
+        "windows_script_count": 0,
+        "total_blobs_in_tree": 3,
+        "listed_blobs": 3,
+    }
     assert body["timing"] == {"meta_ms": 11, "commit_ms": 22, "tree_ms": 33}
     assert [item["path"] for item in body["files"]] == ["README.md", "src/main.py"]
 

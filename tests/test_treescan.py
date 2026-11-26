@@ -18,81 +18,85 @@ def make_tree(items: list[dict], truncated: bool = False) -> dict:
     return {"sha": "root", "tree": items, "truncated": truncated, "url": "https://api.github.com/x"}
 
 
-def test_scans_blobs_and_sorts_paths() -> None:
-    payload = make_tree([blob("README.md", 13), blob("src/app.py", 9), tree("src")])
+def test_counts_all_blobs_as_listed() -> None:
+    payload = make_tree(
+        [
+            blob("README.md", 10),
+            blob("assets/logo.png", 20),
+            blob("src/app.py", 30),
+            blob("node_modules/x.js", 5),
+            tree("src"),
+        ]
+    )
 
     result = scan_tree(payload)
 
-    assert result.scope.files_scanned == 2
+    assert result.scope.files_scanned == 4
     assert result.scope.files_skipped == 0
-    assert result.scope.bytes_scanned == 22
+    assert result.scope.bytes_scanned == 65
     assert result.scope.truncated is False
-    assert result.stats.text_files == 2
+    assert result.scope.truncate_reason == "none"
+    assert result.stats.total_blobs_in_tree == 4
+    assert result.stats.listed_blobs == 4
+    assert result.stats.text_files == 3
     assert result.stats.windows_script_count == 0
     assert [item.path for item in result.files] == ["README.md", "src/app.py"]
 
 
-def test_skips_excluded_directories() -> None:
+def test_blob_cap_samples_by_priority_not_alphabetical() -> None:
     payload = make_tree(
         [
-            blob("README.md"),
-            blob("node_modules/a/index.js"),
-            blob(".git/config"),
-            blob("vendor/lib.go"),
-            blob("dist/bundle.js"),
-            blob("build/out.txt"),
-            blob(".venv/pyvenv.cfg"),
-            blob("src/node_modules/c.js"),
+            blob("aaa.png", 1),
+            blob("zzz.ps1", 2),
+            blob("mmm.yaml", 3),
+            blob("README.md", 4),
+            blob("src/app.py", 5),
         ]
     )
 
-    result = scan_tree(payload)
-
-    assert result.scope.files_scanned == 1
-    assert result.scope.files_skipped == 7
-    assert [item.path for item in result.files] == ["README.md"]
-
-
-def test_skips_media_binary_archive_and_oversized_file() -> None:
-    payload = make_tree(
-        [
-            blob("docs/readme.md"),
-            blob("assets/logo.png"),
-            blob("assets/demo.mp4"),
-            blob("tools/run.exe"),
-            blob("release/package.zip"),
-            blob("big.txt", 1024 * 1024 + 1),
-        ]
-    )
-
-    result = scan_tree(payload)
-
-    assert result.scope.files_scanned == 1
-    assert result.scope.files_skipped == 5
-    assert result.scope.truncated is False
-
-
-def test_truncates_when_file_count_limit_is_reached() -> None:
-    payload = make_tree([blob("a.txt"), blob("b.txt"), blob("c.txt")])
-
-    result = scan_tree(payload, ScanLimits(max_files=2))
+    result = scan_tree(payload, ScanLimits(blob_cap=2))
 
     assert result.scope.files_scanned == 2
+    assert result.scope.files_skipped == 3
+    assert result.scope.bytes_scanned == 5
     assert result.scope.truncated is True
-    assert "2" in (result.scope.truncate_reason or "")
+    assert result.scope.truncate_reason == "blob_cap"
+    assert result.stats.total_blobs_in_tree == 5
+    assert result.stats.listed_blobs == 2
+    assert [item.path for item in result.files] == ["mmm.yaml", "zzz.ps1"]
 
 
-def test_truncates_when_total_bytes_limit_is_reached() -> None:
-    payload = make_tree([blob("a.txt", 6), blob("b.txt", 6)])
+def test_no_truncation_when_blob_count_equals_cap() -> None:
+    payload = make_tree([blob("a.txt"), blob("b.txt"), blob("c.txt")])
 
-    result = scan_tree(payload, ScanLimits(max_total_bytes=10))
+    result = scan_tree(payload, ScanLimits(blob_cap=3))
 
-    assert result.scope.files_scanned == 1
+    assert result.scope.files_scanned == 3
+    assert result.scope.truncated is False
+    assert result.scope.truncate_reason == "none"
+
+
+def test_github_tree_truncation_uses_github_reason() -> None:
+    payload = make_tree([blob("README.md"), blob("src/app.py")], truncated=True)
+
+    result = scan_tree(payload, github_truncated=True)
+
     assert result.scope.truncated is True
-    assert "上限" in (result.scope.truncate_reason or "")
+    assert result.scope.truncate_reason == "github_tree_limit"
+    assert result.stats.listed_blobs == 2
 
 
-def test_keeps_only_fifty_files_sorted_by_path() -> None:
+def test_github_tree_truncation_wins_over_blob_cap_reason() -> None:
+    payload = make_tree([blob("a.py"), blob("b.ps1"), blob("c.yaml")], truncated=True)
+
+    result = scan_tree(payload, ScanLimits(blob_cap=2), github_truncated=True)
+
+    assert result.scope.truncated is True
+    assert result.scope.truncate_reason == "github_tree_limit"
+    assert result.stats.listed_blobs == 2
+
+
+def test_keeps_only_fifty_display_files_sorted_by_path() -> None:
     items = [blob(f"file{index:02d}.txt") for index in range(60)]
 
     result = scan_tree(make_tree(items))
@@ -115,29 +119,35 @@ def test_counts_windows_scripts_across_whole_tree() -> None:
 
     result = scan_tree(payload)
 
-    assert result.scope.files_scanned == 2
-    assert result.scope.files_skipped == 2
-    assert result.stats.text_files == 2
+    assert result.scope.files_scanned == 4
+    assert result.scope.files_skipped == 0
     assert result.stats.windows_script_count == 3
+    assert [item.path for item in result.files] == ["README.md", "tools/a.ps1"]
 
 
-def test_rejects_unsafe_paths() -> None:
+def test_text_files_is_extension_based() -> None:
+    payload = make_tree(
+        [
+            blob("README.md"),
+            blob("logo.png"),
+            blob("tool.exe"),
+            blob("package.zip"),
+        ]
+    )
+
+    result = scan_tree(payload)
+
+    assert result.stats.text_files == 1
+    assert result.stats.total_blobs_in_tree == 4
+
+
+def test_unsafe_paths_are_not_counted_in_total() -> None:
     payload = make_tree([blob("../evil.py"), blob("ok.py")])
 
     result = scan_tree(payload)
 
+    assert result.stats.total_blobs_in_tree == 1
     assert result.scope.files_scanned == 1
-    assert result.scope.files_skipped == 1
-    assert [item.path for item in result.files] == ["ok.py"]
-
-
-def test_passes_through_github_truncated_flag() -> None:
-    payload = make_tree([blob("README.md")], truncated=True)
-
-    result = scan_tree(payload)
-
-    assert result.scope.truncated is False
-    assert result.stats.text_files == 1
 
 
 def test_invalid_tree_payload_raises_fetch_failed() -> None:

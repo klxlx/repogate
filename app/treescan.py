@@ -1,4 +1,4 @@
-"""git/trees 清单解析：只读元数据、不下载内容、限额可注入便于测试。"""
+"""git/trees 清单解析：纯元数据统计，BLOB_CAP 触发时按优先级采样。"""
 
 from __future__ import annotations
 
@@ -8,9 +8,7 @@ from dataclasses import dataclass
 from .errors import fetch_failed
 from .models import FileEntry, ScopeInfo, StatsInfo
 
-MAX_FILES = 2000
-MAX_TOTAL_BYTES = 50 * 1024 * 1024
-MAX_FILE_BYTES = 1 * 1024 * 1024
+BLOB_CAP = 20000
 
 EXCLUDED_DIR_NAMES = frozenset({".git", "node_modules", "vendor", "dist", "build", ".venv"})
 
@@ -38,12 +36,23 @@ ARCHIVE_EXTENSIONS = frozenset(
 )
 WINDOWS_SCRIPT_EXTENSIONS = frozenset({".bat", ".cmd", ".ps1", ".vbs"})
 
+CONFIG_EXTENSIONS = frozenset({".yaml", ".yml", ".toml", ".ini", ".json", ".conf"})
+SCRIPT_EXTENSIONS = frozenset({".bat", ".cmd", ".ps1", ".vbs", ".sh", ".mk"})
+SOURCE_EXTENSIONS = frozenset(
+    {
+        ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".java", ".go",
+        ".rs", ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".cs", ".rb",
+        ".php", ".swift", ".kt", ".kts", ".scala", ".m", ".mm", ".lua", ".r",
+        ".jl", ".dart", ".vue", ".svelte", ".sql", ".proto", ".gradle",
+        ".groovy", ".pl", ".pm", ".ex", ".exs", ".erl", ".hrl", ".fs", ".fsx",
+        ".vb", ".asm", ".s",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ScanLimits:
-    max_files: int = MAX_FILES
-    max_total_bytes: int = MAX_TOTAL_BYTES
-    max_file_bytes: int = MAX_FILE_BYTES
+    blob_cap: int = BLOB_CAP
 
 
 DEFAULT_LIMITS = ScanLimits()
@@ -71,8 +80,33 @@ def _is_excluded_dir(path: str) -> bool:
     return any(part in EXCLUDED_DIR_NAMES for part in parts[:-1])
 
 
+def _is_textizable(path: str) -> bool:
+    ext = _extension(path)
+    return ext not in BINARY_EXTENSIONS and ext not in MEDIA_EXTENSIONS and ext not in ARCHIVE_EXTENSIONS
+
+
+def _priority(path: str) -> int:
+    """采样优先级：1 最高，5 最低。数字小者先入清单。"""
+    name = path.rsplit("/", 1)[-1].lower()
+    ext = _extension(path)
+
+    if name.startswith(".env") or ext in CONFIG_EXTENSIONS:
+        return 1
+    if ext in SCRIPT_EXTENSIONS or name == "makefile" or name == "dockerfile" or name.startswith("dockerfile."):
+        return 2
+    if (
+        name.startswith("readme")
+        or name.startswith("license")
+        or (name.startswith("requirements") and ext == ".txt")
+        or name in {"package.json", "pyproject.toml", "go.mod", "pom.xml"}
+    ):
+        return 3
+    if ext in SOURCE_EXTENSIONS:
+        return 4
+    return 5
+
+
 def _count_windows_scripts(entries: list[dict]) -> int:
-    """按仓库全量 blob 统计脚本数，不受目录/大小过滤影响，供验收对照。"""
     count = 0
     for item in entries:
         if item.get("type") != "blob":
@@ -83,54 +117,69 @@ def _count_windows_scripts(entries: list[dict]) -> int:
     return count
 
 
-def scan_tree(tree_payload: dict, limits: ScanLimits = DEFAULT_LIMITS) -> TreeScanResult:
+def _sample_by_priority(entries: list[dict], cap: int) -> list[dict]:
+    buckets: dict[int, list[dict]] = {1: [], 2: [], 3: [], 4: [], 5: []}
+    for item in entries:
+        buckets[_priority(item["path"])].append(item)
+
+    selected: list[dict] = []
+    for priority in (1, 2, 3, 4, 5):
+        bucket = sorted(buckets[priority], key=lambda item: item["path"])
+        for item in bucket:
+            if len(selected) >= cap:
+                return selected
+            selected.append(item)
+    return selected
+
+
+def scan_tree(
+    tree_payload: dict,
+    limits: ScanLimits = DEFAULT_LIMITS,
+    github_truncated: bool = False,
+) -> TreeScanResult:
     entries = tree_payload.get("tree")
     if not isinstance(entries, list):
         raise fetch_failed("文件树结构异常（缺少 tree 数组）")
 
-    scope = ScopeInfo()
-    stats = StatsInfo(windows_script_count=_count_windows_scripts(entries))
-    files: list[FileEntry] = []
+    blobs = [
+        item
+        for item in entries
+        if isinstance(item, dict)
+        and item.get("type") == "blob"
+        and isinstance(item.get("path"), str)
+        and _is_safe_path(item["path"])
+    ]
+    total_blobs = len(blobs)
 
-    for item in entries:
-        if not isinstance(item, dict) or item.get("type") != "blob":
-            continue
+    if total_blobs > limits.blob_cap:
+        selected = _sample_by_priority(blobs, limits.blob_cap)
+        truncated = True
+        reason = "github_tree_limit" if github_truncated else "blob_cap"
+    else:
+        selected = blobs
+        truncated = github_truncated
+        reason = "github_tree_limit" if github_truncated else "none"
 
-        path = item.get("path")
-        size = int(item.get("size") or 0)
-        if not isinstance(path, str) or not _is_safe_path(path):
-            scope.files_skipped += 1
-            continue
+    scope = ScopeInfo(
+        files_scanned=len(selected),
+        files_skipped=total_blobs - len(selected),
+        bytes_scanned=sum(int(item.get("size") or 0) for item in selected),
+        truncated=truncated,
+        truncate_reason=reason,
+    )
+    stats = StatsInfo(
+        text_files=sum(1 for item in selected if _is_textizable(item["path"])),
+        windows_script_count=_count_windows_scripts(entries),
+        total_blobs_in_tree=total_blobs,
+        listed_blobs=len(selected),
+    )
 
-        if _is_excluded_dir(path):
-            scope.files_skipped += 1
-            continue
-
-        ext = _extension(path)
-        if ext in ARCHIVE_EXTENSIONS or ext in MEDIA_EXTENSIONS or ext in BINARY_EXTENSIONS:
-            scope.files_skipped += 1
-            continue
-
-        if size > limits.max_file_bytes:
-            scope.files_skipped += 1
-            continue
-
-        if scope.files_scanned >= limits.max_files:
-            scope.truncated = True
-            scope.truncate_reason = f"文件数超过 {limits.max_files} 上限，已停止遍历"
-            break
-
-        if scope.bytes_scanned + size > limits.max_total_bytes:
-            scope.truncated = True
-            scope.truncate_reason = (
-                f"文件总大小超过 {limits.max_total_bytes // (1024 * 1024)}MB 上限，已停止遍历"
-            )
-            break
-
-        scope.files_scanned += 1
-        scope.bytes_scanned += size
-        stats.text_files += 1
-        files.append(FileEntry(path=path, size=size, is_text=True))
-
-    ordered = sorted(files, key=lambda item: item.path)
-    return TreeScanResult(scope=scope, stats=stats, files=ordered[:50])
+    display_files = [
+        FileEntry(path=item["path"], size=int(item.get("size") or 0), is_text=True)
+        for item in selected
+        if not _is_excluded_dir(item["path"])
+        and _is_textizable(item["path"])
+        and int(item.get("size") or 0) <= 1024 * 1024
+    ]
+    display_files.sort(key=lambda item: item.path)
+    return TreeScanResult(scope=scope, stats=stats, files=display_files[:50])

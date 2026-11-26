@@ -12,6 +12,7 @@ from app.rules.deps import (
     detect_start_missing,
 )
 from app.rules.docs import R01, R02, detect_readme_incomplete, detect_readme_missing
+from app.rules.secrets import R09, R10, R11
 from app.snapshot import BlobRef, Snapshot
 
 
@@ -139,12 +140,14 @@ def test_r04_is_na_without_parseable_manifest() -> None:
     assert outcome.finding is None
 
 
-def test_r04_fails_when_mostly_floating() -> None:
+def test_r04_mostly_floating_is_pass_with_hint() -> None:
     text = json.dumps({"dependencies": {"a": "^1.0.0", "b": "~2.0.0"}})
     outcome = detect_deps_unpinned(snapshot({"package.json": 100}, {"package.json": text}))
 
-    assert outcome.status == "fail"
-    assert outcome.finding is not None
+    assert outcome.status == "pass"
+    assert outcome.finding is None
+    assert outcome.extra_findings[0].severity == "low"
+    assert "仅提示 1 条，不扣分" in outcome.basis
     assert "根目录 package.json" in outcome.basis
 
 
@@ -258,18 +261,22 @@ def test_r05_degrades_when_package_json_unreadable() -> None:
 def test_evaluate_returns_check_per_rule_and_consistent_findings() -> None:
     evaluation = evaluate(snapshot())
 
-    assert len(evaluation.checks) == 8
+    assert len(evaluation.checks) == 11
     assert [check.rule_id for check in evaluation.checks] == [
-        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"
     ]
     assert all(check.basis.strip() for check in evaluation.checks)
-    fail_rules = {check.rule_id for check in evaluation.checks if check.status == "fail"}
-    clean_rules = {
-        check.rule_id for check in evaluation.checks if check.status in ("pass", "n/a")
-    }
-    finding_rules = {finding.rule_id for finding in evaluation.findings}
-    assert fail_rules <= finding_rules
-    assert not (clean_rules & finding_rules)
+
+    by_rule: dict[str, list] = {}
+    for finding in evaluation.findings:
+        by_rule.setdefault(finding.rule_id, []).append(finding)
+
+    for check in evaluation.checks:
+        items = by_rule.get(check.rule_id, [])
+        if check.status == "fail":
+            assert any(item.severity in ("medium", "high", "critical") for item in items)
+        elif check.status in ("pass", "n/a"):
+            assert all(item.severity in ("low", "info") for item in items)
 
 
 def test_rule_metadata_matches_contract() -> None:
@@ -277,4 +284,7 @@ def test_rule_metadata_matches_contract() -> None:
     assert (R02.dimension, R02.severity, R02.points, R02.needs_content) == ("docs", "medium", -4, True)
     assert (R03.dimension, R03.severity, R03.points, R03.needs_content) == ("deps", "high", -8, False)
     assert (R04.dimension, R04.severity, R04.points, R04.needs_content) == ("deps", "low", -2, True)
+    assert (R09.dimension, R09.severity, R09.needs_content) == ("secrets", "critical", True)
+    assert (R10.dimension, R10.severity, R10.needs_content) == ("secrets", "critical", True)
+    assert (R11.dimension, R11.severity, R11.needs_content) == ("secrets", "critical", True)
     assert (R05.dimension, R05.severity, R05.points, R05.needs_content) == ("deps", "medium", -4, True)

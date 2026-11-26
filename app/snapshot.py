@@ -26,6 +26,8 @@ class Snapshot:
     failed_paths: frozenset[str] = frozenset()
     text_total: int = 0
     raw_windows_scripts: int = 0
+    excluded_windows_scripts: int = 0
+    unlisted_windows_scripts: int = 0
 
     def shallow_blobs(self) -> list[BlobRef]:
         """根目录与一层子目录：path 中最多一个斜杠。"""

@@ -80,6 +80,8 @@ async def _inspect(repo_url: str) -> InspectResponse:
     snapshot = build_snapshot(bundle, owner, repo)
     snapshot.text_total = scan.scope.files_scanned
     snapshot.raw_windows_scripts = scan.raw_windows_script_count
+    snapshot.excluded_windows_scripts = scan.excluded_windows_script_count
+    snapshot.unlisted_windows_scripts = scan.unlisted_windows_script_count
     content = await fetch_contents(
         owner, repo, bundle.commit_sha, plan_content_paths(snapshot)
     )
@@ -98,6 +100,11 @@ async def _inspect(repo_url: str) -> InspectResponse:
     stats.path_scan_files = len(content.contents)
     stats.path_scan_bytes = content.bytes
     stats.content_total_text_files = scope.files_scanned
+    stats.secret_scan_files = len(content.contents)
+    stats.secret_scan_bytes = sum(len(text.encode("utf-8")) for text in content.contents.values())
+    stats.secret_sampling_ratio = (
+        round(stats.secret_scan_files / scope.files_scanned, 4) if scope.files_scanned else 0.0
+    )
     timing = bundle.timing
     logger.info(
         "inspect ok repo=%s ref=%s sha=%s requests=%d content_requests=%d content_bytes=%d "

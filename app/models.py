@@ -52,6 +52,9 @@ class StatsInfo(BaseModel):
     path_scan_files: int = 0
     path_scan_bytes: int = 0
     content_total_text_files: int = 0
+    secret_scan_files: int = 0
+    secret_scan_bytes: int = 0
+    secret_sampling_ratio: float = 0.0
 
 
 class Finding(BaseModel):
@@ -61,7 +64,7 @@ class Finding(BaseModel):
     rule_id: str
     category: str
     dimension: str
-    severity: Literal["high", "medium", "low", "info"]
+    severity: Literal["critical", "high", "medium", "low", "info"]
     title: str
     file: str = ""
     line: int = 0
@@ -70,6 +73,7 @@ class Finding(BaseModel):
     fix: str
     hit_count: int = 1
     confidence: Literal["high", "medium", "low"] = "high"
+    cap_eligible: bool = False
 
 
 class RuleInfo(BaseModel):

@@ -45,9 +45,11 @@ def test_r06_passes_without_windows_scripts() -> None:
 
 def test_r06_grades_by_count() -> None:
     one = detect_windows_scripts(snapshot({"a.ps1": 10}))
-    assert one.status == "fail"
-    assert one.finding is not None and one.finding.severity == "info"
+    assert one.status == "pass"
+    assert one.finding is None
+    assert one.extra_findings[0].severity == "info"
     assert one.penalty == 0
+    assert "仅提示 1 条" in one.basis
 
     three = detect_windows_scripts(snapshot({"a.ps1": 1, "b.cmd": 1, "c.bat": 1}))
     assert three.finding is not None and three.finding.severity == "medium"
@@ -145,7 +147,8 @@ def test_r08_merges_hits_in_one_file() -> None:
 
     outcome = detect_hardcoded_path(snapshot({"merge.py": 80}, {"merge.py": text}, text_total=1))
 
-    findings = [outcome.finding] + outcome.extra_findings
+    findings = outcome.extra_findings
+    assert outcome.status == "pass"
     assert len(findings) == 1
     assert findings[0].hit_count == 2
     assert findings[0].line == 1
@@ -214,6 +217,20 @@ def test_r08_ignores_escape_sequences_and_url_and_route() -> None:
 
     assert outcome.status == "pass"
     assert "未命中硬编码路径" in outcome.basis
+
+
+def test_r08_nested_test_file_is_info() -> None:
+    text = 'X = "C:\\\\unrelated"\n'
+    outcome = detect_hardcoded_path(
+        snapshot(
+            {"src/vs/platform/agentHost/test/provider.test.ts": 30},
+            {"src/vs/platform/agentHost/test/provider.test.ts": text},
+            text_total=1,
+        )
+    )
+
+    assert outcome.status == "pass"
+    assert outcome.extra_findings[0].severity == "info"
 
 
 def test_r08_degrades_without_content() -> None:

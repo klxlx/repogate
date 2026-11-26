@@ -1,6 +1,6 @@
 # RepoGate
 
-输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖/可移植性缺陷。当前完成**第 3 步（v1.9）：规则引擎 R01–R08 + 平台可移植规则**，尚未实现评分、三卡报告、密钥规则。
+输入一个公开 GitHub 仓库地址，回答最基础的问题：这个仓库真实长什么样、基于哪个 commit、我们看见了哪些文件、有没有明显的资料/依赖/可移植性/密钥泄露缺陷。当前完成**第 4 步（v2.0）：规则引擎 R01–R11 + 密钥与敏感信息规则**，尚未实现评分与三卡报告。
 
 ## 快速开始（Windows）
 
@@ -44,19 +44,22 @@ python3.13 -m venv .venv
   "ref": "main",
   "commit_sha": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
   "scope": {"files_scanned": 123, "files_skipped": 7, "bytes_scanned": 664038, "truncated": false, "truncate_reason": "none"},
-  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 121, "content_bytes": 658389, "content_failed": 0, "content_files_available": 120, "path_scan_files": 120, "path_scan_bytes": 658389, "content_total_text_files": 123},
+  "stats": {"text_files": 123, "windows_script_count": 1, "total_blobs_in_tree": 130, "listed_blobs": 130, "bytes_total_listed": 4451562, "unlisted_blobs": 0, "content_requests": 121, "content_bytes": 658389, "content_failed": 0, "content_files_available": 120, "path_scan_files": 120, "path_scan_bytes": 658389, "content_total_text_files": 123, "secret_scan_files": 120, "secret_scan_bytes": 658389, "secret_sampling_ratio": 0.9756},
   "timing": {"meta_ms": 749, "commit_ms": 425, "tree_ms": 688, "tree_slow": false, "tree_attempts": 1},
   "files": [{"path": ".coveragerc", "size": 33, "is_text": true}],
-  "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "pyproject.toml", "line": 0, "evidence_masked": "浮动 4 个 / 总计 4 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high"}],
+  "findings": [{"id": "R04-deps-unpinned", "rule_id": "R04", "category": "deps", "dimension": "deps", "severity": "low", "title": "依赖版本大面积浮动", "file": "pyproject.toml", "line": 0, "evidence_masked": "浮动 4 个 / 总计 4 个；未发现 lockfile（package-lock.json / yarn.lock / pnpm-lock.yaml / poetry.lock / Pipfile.lock）", "impact": "构建结果不可复现，依赖漂移可能引入不可控风险", "fix": "固定依赖版本，并提交对应 lockfile", "hit_count": 1, "confidence": "high", "cap_eligible": false}],
   "checks": [
     {"rule_id": "R01", "status": "pass", "basis": "根目录 README.md", "file": "README.md", "line": 0},
     {"rule_id": "R02", "status": "pass", "basis": "根目录 README.md 覆盖 2 类说明：A 安装/构建、C 配置/环境", "file": "README.md", "line": 0},
     {"rule_id": "R03", "status": "pass", "basis": "根目录 pyproject.toml（共 3 个候选）", "file": "pyproject.toml", "line": 0},
-    {"rule_id": "R04", "status": "fail", "basis": "根目录 pyproject.toml 浮动 4 个 / 总计 4 个（>50%），无 lockfile", "file": "pyproject.toml", "line": 0},
+    {"rule_id": "R04", "status": "pass", "basis": "根目录 pyproject.toml 浮动 4 个 / 总计 4 个（>50%），无 lockfile；仅提示 1 条，不扣分", "file": "pyproject.toml", "line": 0},
     {"rule_id": "R05", "status": "pass", "basis": "根目录 Makefile", "file": "Makefile", "line": 0},
-    {"rule_id": "R06", "status": "fail", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1", "file": "docs/make.bat", "line": 0},
+    {"rule_id": "R06", "status": "pass", "basis": "共 1 个 Windows 脚本（.bat 1），占脚本总量 1/1；仅提示 1 条，不扣分", "file": "docs/make.bat", "line": 0},
     {"rule_id": "R07", "status": "pass", "basis": "存在跨平台入口：Makefile（Makefile）", "file": "Makefile", "line": 0},
-    {"rule_id": "R08", "status": "fail", "basis": "抽样 120/123（97.56%），命中 2 个文件（high 2 / low 0 / info 0）", "file": "src/requests/utils.py", "line": 487}
+    {"rule_id": "R08", "status": "pass", "basis": "抽样 120/123（97.56%），命中 2 个文件（high 0 / low 1 / info 1）；仅提示 2 条，不扣分", "file": "src/requests/utils.py", "line": 487},
+    {"rule_id": "R09", "status": "pass", "basis": "未发现 .env 入库，.gitignore 已包含 .env", "file": ".gitignore", "line": 0},
+    {"rule_id": "R10", "status": "pass", "basis": "抽样 120/123（97.56%），未命中私钥材料", "file": "", "line": 0},
+    {"rule_id": "R11", "status": "pass", "basis": "抽样 120/123（97.56%），未命中令牌或带账密连接串", "file": "", "line": 0}
   ]
 }
 ```
@@ -77,7 +80,8 @@ python3.13 -m venv .venv
   "impact": "无法判断依赖来源与版本，供应链风险不可评估",
   "fix": "补充标准依赖清单（requirements.txt / pyproject.toml / package.json 等）",
   "hit_count": 1,
-  "confidence": "high"
+  "confidence": "high",
+  "cap_eligible": false
 }
 ```
 
@@ -114,6 +118,7 @@ python3.13 -m venv .venv
   - `listed_blobs + stats.unlisted_blobs == stats.total_blobs_in_tree`
 - `stats.text_files` 与 `files_scanned` 同口径；`stats.windows_script_count` 与 R06 同源，只统计**纳入分析范围**（排除目录段已剔除）的 `.bat/.cmd/.ps1/.vbs`。全树原始数量另由 `snapshot.raw_windows_scripts` 提供，仅用于 R06 basis 注脚，不进 stats。Windows 脚本数一律按纳入分析范围统计。
 - `stats.path_scan_files` / `stats.path_scan_bytes` 为实际读取到的文本文件数与字节；`stats.content_total_text_files` 为可读文本文件总数（= `files_scanned`）。
+- `stats.secret_scan_files` / `stats.secret_scan_bytes` 为密钥规则实际扫描的文件数与字节；`stats.secret_sampling_ratio = secret_scan_files / content_total_text_files`（保留 4 位小数），用于判定封顶资格，不得隐藏。
 - `files` 只返回 `files_scanned` 集合中按路径排序的前 50 条。
 - 排除目录段（任意一段命中即整条跳过）：`.git` / `node_modules` / `vendor` / `dist` / `build` / `.venv` / `venv` / `__pycache__` / `.pytest_cache` / `.idea` / `.vs` / `obj`。
 - 网络重试：meta 与 tree 遇 5xx / `RemoteProtocolError` 重试 2 次（退避 1s → 3s），tree 实际尝试次数记 `timing.tree_attempts`；三次都失败才报 `FETCH_FAILED`，404/403/429 与超时不重试。
@@ -130,9 +135,12 @@ python3.13 -m venv .venv
 | R03 | deps-missing | deps | high | -8 | 否 | 最高可用层级无任何依赖清单（含 `.sln/.slnx` / `.csproj` / `vcpkg.json` / `CMakeLists.txt`） |
 | R04 | deps-unpinned | deps | low | -2 | 是 | 无可解析清单（`package.json` / `requirements.txt` / `pyproject.toml`）时 `n/a`；有清单时无 lockfile 且浮动版本 >50% 判 fail |
 | R05 | start-missing | deps | medium | -4 | 是 | 最高可用层级无 `package.json:scripts.start/dev/serve/build/compile`、`Makefile`、`Dockerfile`、`docker-compose*`、`*.sln/.slnx`；根无 `CMakeLists.txt` / `build.ps1` / `build.bat` / `build.sh` / `*.csproj` |
-| R06 | windows-scripts | portability | high | -6 | 否 | 统计纳入分析范围的 `.bat/.cmd/.ps1/.vbs`（与 `stats.windows_script_count` 同源）；0 个 pass，1 个 info（扣 0，保留 finding），2–4 个 medium（-3），≥5 个 high（-6）；share = win/(win+.sh+.bash) < 0.5 时最高只判 medium；basis 可带注脚「全树 N，其中 M 个位于 build/ 等排除目录」 |
+| R06 | windows-scripts | portability | high | -6 | 否 | 统计纳入分析范围的 `.bat/.cmd/.ps1/.vbs`（与 `stats.windows_script_count` 同源）；0 个 pass，1 个 info（扣 0，保留 finding），2–4 个 medium（-3），≥5 个 high（-6）；share = win/(win+.sh+.bash) < 0.5 时最高只判 medium；basis 可带注脚「全树 N，其中 M 个未纳入（排除目录 A 个、BLOB_CAP 未列出 B 个）」 |
 | R07 | no-crossplatform | portability | medium | -4 | 否 | 无 Windows 脚本 → n/a；有 Windows 脚本且存在 `.sh/.bash/Makefile/Dockerfile/docker-compose*.yml` → pass；全无 → fail（-4） |
 | R08 | hardcoded-path | portability | high | -10 | 是 | 扫 `path_scan_files` 文本，识别盘符 / UNC / `/Users|home/<user>` / `/mnt/<x>`；占位符、示例用户名、CI runner、占位路径段、文档降级 low，`tests/test/fixtures/examples/docs/samples` 目录降级 info；同文件合并，high 每文件 -2，单规则封顶 -10；basis 必含「抽样 X/Y（Z%）」，Z<20% 时 fail 记 medium confidence 并声明「仅基于抽样文件，非全仓结论」，零命中记 degraded |
+| R09 | env-committed | secrets | critical | -10 | 是 | tree 命中 `.env` / `.env.*`（排除 `.env.example/.sample/.template/.dist`，大小写不敏感）；读前 4KB：密钥类 KEY（含 secret/token/password/api_key/credential/auth/key）有非占位值 → critical（封顶 69），密钥类值全空/占位 → medium（-10，不封顶）；不存在但 `.gitignore` 未包含 `.env` → low（提示，不扣分）；`tests/testdata` 等目录中的 `.env` 视为夹具降级 low；evidence 只显示 `KEY=***` |
+| R10 | private-key | secrets | critical | -15 | 是 | 内容命中 `-----BEGIN … PRIVATE KEY-----` → critical（封顶 59）；tree 命中 `.pem/.key/.p12/.pfx/.jks/id_rsa*` 但内容不可读 → high（-15）；`tests/test/fixtures/examples/docs` 及测试文件降级 low |
+| R11 | secret-token | secrets | critical | -15 | 是 | 内容命中 OpenAI/Anthropic/AWS/阿里云/GitHub/Slack/Google 令牌、JWT、Bearer、带账密数据库 URL；占位值、重复字符 → low，文档 → info，测试/示例目录 → low；其余按封顶资格判 critical（封顶 59）或 high（-15，不封顶） |
 
 - 规则层是纯函数 `detect(snapshot)`，不发起任何网络请求；内容由内容层预取后放进 `Snapshot`。
 - 事实型规则（缺文件）`file=""`、`line=0`，evidence 固定写「未找到 X（已检查最高层级：根目录与一层普通子目录）」。
@@ -160,8 +168,8 @@ python3.13 -m venv .venv
 
 | status | 含义 | 与 findings 的关系 |
 | --- | --- | --- |
-| `pass` | 通过 | 不允许有对应 finding |
-| `fail` | 未通过 | 必须具备一条对应 finding |
+| `pass` | 通过；允许 low / info 提示 | 不得有 medium 及以上 finding；low/info finding 保留，basis 追加「仅提示 N 条，不扣分」 |
+| `fail` | 未通过 | 必须至少有一条 medium / high / critical finding |
 | `degraded` | 降级：依据文件读取失败或只在弱目录命中，结论不完整（页面黄色） | 部分依据可用时输出 info finding；全部依据失败时只在 checks 记 degraded，不出 finding |
 | `n/a` | 不适用（页面灰色） | 不允许有对应 finding；第 5 步评分不计入分母 |
 
@@ -171,9 +179,17 @@ python3.13 -m venv .venv
   - `无可解析清单，规则不适用`
 - R05 的 `package.json` 命中集合在 v1.8 收窄为 `start/dev/serve/build/compile`（不再认 `watch/test/lint`）；basis 分叉：`scripts.start` 等写「启动入口」，`scripts.build/compile` 写「构建入口，无启动命令」。
 - R05 命中 Windows 专用入口（`.sln` / `.slnx` / `.csproj` / `build.ps1` / `build.bat`）时，basis 标注「Linux/容器环境需替代方案」；同一文案常量 `WINDOWS_ONLY_IMPACT` 供 R06/R07 复用。
-- 一致性断言（代码内 assert，单测覆盖）：checks 条数 == 规则数（8）、`rule_id` 不重复、`fail` ⊆ findings、`pass` / `n/a` ∩ findings == 空、`basis` 非空。
+- 一致性断言（代码内 assert，单测覆盖）：checks 条数 == 规则数（11）、`rule_id` 不重复、`fail` ⇔ 存在 medium+ finding、`pass` 不得有 medium+ finding、`n/a` 不得有 finding、`basis` 非空。
 
-## 配额与 token
+### 密钥与敏感信息（第 4 步）
+
+- R09 / R10 / R11 的每条 finding 带 `cap_eligible`：`secret_sampling_ratio ≥ 0.5` 或命中高风险路径（`.env*`、`*.pem/*.key/*.p12/*.pfx`、`id_rsa*`、`*credential*`、`*secret*`、根目录配置文件）时为 `true`，第 5 步据此封顶（R09 69 分，R10 / R11 59 分）。
+- 不满足封顶资格时仍然出 finding，但 `severity=high`、`-15`、`cap_eligible=false`，impact 固定写「抽样范围内发现，未构成全仓结论」。
+- 掩码：`app/masking.py::mask_secret` 统一为「前 4 + *** + 后 2」，长度 <8 全 `***`。R09 evidence 只显示 `KEY=***`；完整密钥不得出现在响应 JSON、页面、日志或 golden 文件。
+- 占位判定（R11）：值含 `xxx / your / example / sample / demo / test / dummy / fake / placeholder / changeme / changethis / redacted / < / ${ / {{ / %s`，或去掉前缀后由同一字符重复构成 → low，不封顶。
+- 内容预取把 `.env*`、`.gitignore`、`.pem/.key/id_rsa*`、`*credential*/*secret*` 前移到普通抽样之前，保证 R09/R10 尽量拿到原文。
+
+
 
 - 默认匿名调用：60 次/时（GitHub 按来源 IP 计）。本项目每仓库固定 3 次 API 请求，满配额约可扫 20 个仓库/时。
 - 可选：设置环境变量 `GITHUB_TOKEN`（公开仓库只读即可，无需额外 scope），配额提升到 5000 次/时。每次扫描读取一次，只放进 `Authorization: Bearer` 请求头；不写进代码、不出现在响应、不出现在日志。
@@ -183,9 +199,9 @@ python3.13 -m venv .venv
 ## 内容读取层
 
 - 只读 `https://raw.githubusercontent.com/{owner}/{repo}/{commit_sha}/{path}`，不调用 contents API。
-- 配额：≤120 个文件、≤8MB 总量、并发 6、单文件超时 15s、单文件 ≤512KB；超时与 5xx 各重试 1 次，404 不重试。预取顺序按证据层级：README 取最高层，清单取最高层同层全部，弱目录不取，预算先给根目录文件；其余文本按 P1–P5（配置 → 脚本 → 说明/清单 → 源码 → 其他）排序补齐。
+- 配额：≤120 个文件、≤8MB 总量、并发 6、单文件超时 15s、单文件 ≤512KB；超时与 5xx 各重试 1 次，404 不重试。预取顺序按证据层级：README 取最高层，清单取最高层同层全部，弱目录不取，预算先给根目录文件；随后是 `.env*` / `.gitignore` / 可读私钥等密钥候选；其余文本按 P1–P5（配置 → 脚本 → 说明/清单 → 源码 → 其他）排序补齐。
 - 抽样比例：`stats.path_scan_files / stats.content_total_text_files`，报告与页面不得隐藏；`path_scan_bytes` 为实际读取字节。R08 的 basis 必须写明「抽样 X/Y（Z%）」；Z<20% 时不允许给出干净结论：有命中记 fail + `confidence=medium`，impact 追加「仅基于抽样文件，非全仓结论」，零命中记 degraded「抽样率过低（Z%），未发现不代表不存在」。
-- R08 豁免分层：路径位于 `tests/` `test/` `fixtures/` `examples/` `docs/` `samples/` → info；路径段精确命中 `foo` `bar` `baz` `example` `sample` `demo` `test` `your-path` `path-to` → low；用户名命中占位表（含 `someone` `alice` `bob` `jane` `john` `doe` `dev` `developer` `test`）→ low。任一条生效时 `confidence=medium`，evidence 保留原值不掩码路径。
+- R08 豁免分层：路径位于 `tests/` `test/` `fixtures/` `examples/` `docs/` `samples/`（任意层级同名目录）或 `*_test.go` / `test_*.py` / `*.spec.ts` 等测试文件 → info；路径段精确命中 `foo` `bar` `baz` `example` `sample` `demo` `test` `your-path` `path-to` → low；用户名命中占位表（含 `someone` `alice` `bob` `jane` `john` `doe` `dev` `developer` `test`）→ low。任一条生效时 `confidence=medium`，evidence 保留原值不掩码路径。
 - 请求失败、超时、超配额：该文件标为不可用；依赖内容的规则**不得输出肯定结论**，一律 `degraded` + `confidence=low`，说明「缺 X 文件内容，结论不完整」。
 - `stats.content_requests` / `stats.content_bytes` / `stats.content_failed` / `stats.content_files_available` 单独统计 raw 拉取；`request_count` 仍只算 api.github.com。
 
@@ -193,10 +209,13 @@ python3.13 -m venv .venv
 
 - 429 文案（含 `X-RateLimit-Reset` 恢复时间）目前只用 mock 上游与单测验证，未真实耗尽匿名配额复现。
 - 匿名配额 60 次/时、每仓库 3 次 API 请求，约 20 个仓库/时；建议本地设置 `GITHUB_TOKEN` 提升到 5000 次/时。
+- 密钥规则受抽样率约束：抽样 <50% 且命中文件不在高风险路径时只作 high 提示，不封顶，不能据此断言全仓无泄露。
+- R09 只解析 `.env` 前 4KB 的 `KEY=VALUE`；多行值、注释中的值不参与判定。
+- 占位词表是启发式，宁可漏报也不误报：真实值若恰好含 `test` / `example` 等词会被降级为 low。
 
 ## 当前明确不做
 
-评分、等级、三卡报告、平台/密钥规则、golden 快照、内容全量下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描；页面除一条耗时横幅外不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
+评分、等级、三卡报告、golden 快照、内容全量下载、缓存、数据库、登录、前端框架、私有仓库 / GitLab / Gitee、CVE 漏洞库、Git 历史扫描、密钥熵检测、通用 `password=` 规则、gitleaks 二进制集成；页面除一条耗时横幅外不展示 `stats/timing`，验收以 `/api/inspect` JSON 为准。
 
 ## 测试
 

@@ -70,6 +70,8 @@ class TreeScanResult:
     stats: StatsInfo
     files: list[FileEntry]
     raw_windows_script_count: int = 0
+    excluded_windows_script_count: int = 0
+    unlisted_windows_script_count: int = 0
 
 
 def _extension(path: str) -> str:
@@ -226,9 +228,21 @@ def scan_tree(
         for item in analyzable
     ]
     display_files.sort(key=lambda item: item.path)
+    counted = stats.windows_script_count
+    win_entries = [
+        item
+        for item in entries
+        if isinstance(item, dict)
+        and item.get("type") == "blob"
+        and isinstance(item.get("path"), str)
+        and _extension(item["path"]) in WINDOWS_SCRIPT_EXTENSIONS
+    ]
+    excluded = sum(1 for item in win_entries if is_excluded_dir(item["path"]))
     return TreeScanResult(
         scope=scope,
         stats=stats,
         files=display_files[:50],
-        raw_windows_script_count=_count_windows_scripts(entries, exclude_dirs=False),
+        raw_windows_script_count=len(win_entries),
+        excluded_windows_script_count=excluded,
+        unlisted_windows_script_count=max(len(win_entries) - counted - excluded, 0),
     )

@@ -11,6 +11,9 @@ from ..snapshot import Snapshot
 
 OutcomeStatus = Literal["pass", "fail", "degraded", "n/a"]
 
+SEVERITY_RANK: dict[str, int] = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+MEDIUM_RANK = SEVERITY_RANK["medium"]
+
 
 @dataclass
 class RuleOutcome:
@@ -58,6 +61,7 @@ def make_finding(
     confidence: str = "high",
     keep_paths: bool = False,
     hit_count: int = 1,
+    cap_eligible: bool = False,
 ) -> Finding:
     return Finding(
         id=f"{rule.id}-{rule.slug}",
@@ -73,6 +77,7 @@ def make_finding(
         fix=fix,
         hit_count=hit_count,
         confidence=confidence,
+        cap_eligible=cap_eligible,
     )
 
 
@@ -89,6 +94,38 @@ def failed(rule: Rule, basis: str, finding: Finding, *, penalty: int = 0) -> Rul
         file=finding.file,
         line=finding.line,
         penalty=penalty,
+    )
+
+
+def conclusion(
+    rule: Rule, basis: str, findings: list[Finding], *, penalty: int = 0
+) -> RuleOutcome:
+    """v2.0 状态语义：按最高 severity 判定，medium 及以上才 fail。
+
+    只有 low / info 时判 pass，但 finding 保留，basis 明确「仅提示 N 条，不扣分」。
+    """
+    if not findings:
+        return passed(rule, basis)
+
+    ordered = sorted(findings, key=lambda item: SEVERITY_RANK[item.severity], reverse=True)
+    top = ordered[0]
+    if SEVERITY_RANK[top.severity] >= MEDIUM_RANK:
+        return RuleOutcome(
+            status="fail",
+            basis=basis,
+            finding=top,
+            file=top.file,
+            line=top.line,
+            penalty=penalty,
+            extra_findings=ordered[1:],
+        )
+    return RuleOutcome(
+        status="pass",
+        basis=f"{basis}；仅提示 {len(ordered)} 条，不扣分",
+        finding=None,
+        file=top.file,
+        line=top.line,
+        extra_findings=ordered,
     )
 
 

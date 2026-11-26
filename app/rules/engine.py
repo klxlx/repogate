@@ -8,13 +8,14 @@ from ..masking import mask_evidence
 from ..models import Check, Finding
 from ..snapshot import Snapshot
 from ..treescan import is_text_file, sample_priority
-from .base import Rule
+from .base import SEVERITY_RANK, Rule
 from .deps import R03, R04, R05, is_parseable_manifest
 from .docs import R01, R02, is_readme
 from .evidence import level_of, select
 from .portability import R06, R07, R08
+from .secrets import R09, R10, R11, is_secret_candidate
 
-RULES: tuple[Rule, ...] = (R01, R02, R03, R04, R05, R06, R07, R08)
+RULES: tuple[Rule, ...] = (R01, R02, R03, R04, R05, R06, R07, R08, R09, R10, R11)
 
 
 @dataclass
@@ -48,6 +49,15 @@ def plan_content_paths(snapshot: Snapshot) -> list[tuple[str, int]]:
         seen.add(path)
         ordered.append((path, size))
 
+    # 密钥候选前移：.env* / .gitignore / 可读私钥 / 凭据命名，先于普通抽样
+    for blob in sorted(snapshot.blobs, key=lambda item: item.path):
+        if blob.path in seen or not is_secret_candidate(blob.path):
+            continue
+        if not is_text_file(blob.path, blob.size):
+            continue
+        seen.add(blob.path)
+        ordered.append((blob.path, blob.size))
+
     pool = [
         (sample_priority(blob.path), blob.path, blob.size)
         for blob in snapshot.blobs
@@ -77,15 +87,23 @@ def merge_findings(findings: list[Finding]) -> list[Finding]:
 
 
 def _assert_consistency(checks: list[Check], findings: list[Finding]) -> None:
-    """硬约束：fail 必须有 finding；pass / n/a 不许有 finding；每规则只出现一次。"""
+    """v2.0 状态语义：fail ⇔ 有 medium+ finding；pass 只允许 low/info；n/a 不许有 finding。"""
     rule_ids = [check.rule_id for check in checks]
     assert len(rule_ids) == len(set(rule_ids)) == len(RULES), "checks 必须每条规则一条"
-    fail_rules = {check.rule_id for check in checks if check.status == "fail"}
-    clean_rules = {check.rule_id for check in checks if check.status in ("pass", "n/a")}
-    finding_rules = {finding.rule_id for finding in findings}
-    assert fail_rules <= finding_rules, "fail 规则缺少对应 finding"
-    assert not (clean_rules & finding_rules), "pass / n/a 规则不应有 finding"
+
+    by_rule: dict[str, list[Finding]] = {}
+    for finding in findings:
+        by_rule.setdefault(finding.rule_id, []).append(finding)
+
     for check in checks:
+        items = by_rule.get(check.rule_id, [])
+        top = max((SEVERITY_RANK[item.severity] for item in items), default=-1)
+        if check.status == "fail":
+            assert top >= SEVERITY_RANK["medium"], f"{check.rule_id} 判 fail 但缺 medium+ finding"
+        elif check.status == "pass":
+            assert top < SEVERITY_RANK["medium"], f"{check.rule_id} 判 pass 但有 medium+ finding"
+        elif check.status == "n/a":
+            assert not items, f"{check.rule_id} 判 n/a 但仍有 finding"
         assert check.basis.strip(), f"{check.rule_id} 的 basis 不能为空"
 
 

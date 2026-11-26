@@ -24,6 +24,14 @@ _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+def mask_secret(value: str) -> str:
+    """密钥证据统一格式：前 4 + *** + 后 2；长度 <8 全 ***。"""
+    text = (value or "").strip()
+    if len(text) < 8:
+        return "***"
+    return f"{text[:4]}***{text[-2:]}"
+
+
 def mask_evidence(text: str, limit: int = MAX_EVIDENCE_CHARS, *, keep_paths: bool = False) -> str:
     """脱敏 + 压平空白 + 截断；evidence 必须可安全落库与展示。
 

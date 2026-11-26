@@ -115,6 +115,9 @@ def test_api_inspect_success(monkeypatch) -> None:
         "path_scan_files": 0,
         "path_scan_bytes": 0,
         "content_total_text_files": 2,
+        "secret_scan_files": 0,
+        "secret_scan_bytes": 0,
+        "secret_sampling_ratio": 0.0,
     }
     assert body["timing"] == {
         "meta_ms": 11,
@@ -156,7 +159,7 @@ def test_api_rules_registry() -> None:
     assert response.status_code == 200
     rules = response.json()["rules"]
     assert [rule["id"] for rule in rules] == [
-        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"
     ]
     for rule in rules:
         assert set(rule) == {"id", "dimension", "severity", "points", "needs_content"}
@@ -173,13 +176,14 @@ def test_api_findings_carry_required_fields(monkeypatch) -> None:
 
     body = client.post("/api/inspect", json={"repo_url": "https://github.com/a/b"}).json()
 
-    assert len(body["findings"]) == 2
+    assert len(body["findings"]) == 3
     for finding in body["findings"]:
         assert finding["rule_id"]
         assert finding["evidence_masked"]
-        assert finding["severity"] in {"high", "medium", "low", "info"}
+        assert finding["severity"] in {"critical", "high", "medium", "low", "info"}
         assert finding["confidence"] in {"high", "medium", "low"}
         assert "file" in finding and "line" in finding
+        assert finding["cap_eligible"] in (True, False)
 
 
 def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
@@ -192,21 +196,26 @@ def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
 
     checks = body["checks"]
     assert [check["rule_id"] for check in checks] == [
-        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"
+        "R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08", "R09", "R10", "R11"
     ]
-    assert len(checks) == 8
+    assert len(checks) == 11
     for check in checks:
         assert check["status"] in {"pass", "fail", "degraded", "n/a"}
         assert check["basis"].strip()
         assert "file" in check and "line" in check
 
-    fail_rules = {check["rule_id"] for check in checks if check["status"] == "fail"}
-    clean_rules = {
-        check["rule_id"] for check in checks if check["status"] in ("pass", "n/a")
-    }
-    finding_rules = {finding["rule_id"] for finding in body["findings"]}
-    assert fail_rules <= finding_rules
-    assert not (clean_rules & finding_rules)
+    by_rule: dict[str, list] = {}
+    for finding in body["findings"]:
+        by_rule.setdefault(finding["rule_id"], []).append(finding)
+
+    for check in checks:
+        items = by_rule.get(check["rule_id"], [])
+        if check["status"] == "fail":
+            assert any(item["severity"] in ("medium", "high", "critical") for item in items)
+        elif check["status"] == "pass":
+            assert all(item["severity"] in ("low", "info") for item in items)
+        elif check["status"] == "n/a":
+            assert not items
 
 
 def test_api_stats_windows_script_count_matches_r06_basis(monkeypatch) -> None:

@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 
 from ..snapshot import Snapshot
-from .base import Rule, RuleOutcome, degraded, failed, make_finding, na, passed
+from .base import Rule, RuleOutcome, conclusion, degraded, failed, make_finding, na, passed
 
 WIN_EXTENSIONS = frozenset({".bat", ".cmd", ".ps1", ".vbs"})
 SHELL_EXTENSIONS = frozenset({".sh", ".bash"})
@@ -21,7 +21,10 @@ LOW_USERNAMES = frozenset(
         "someone", "alice", "bob", "jane", "john", "doe", "dev", "developer", "test",
     }
 )
-INFO_DIR_PREFIXES = ("tests/", "test/", "fixtures/", "examples/", "docs/", "samples/")
+INFO_DIR_SEGMENTS = frozenset({"tests", "test", "fixtures", "examples", "docs", "samples"})
+_TEST_FILE_RE = re.compile(
+    r"(?i)(^test_.*\.py$|.*_test\.(py|go)$|.*\.(test|spec)\.(js|jsx|ts|tsx)$)"
+)
 PLACEHOLDER_SEGMENTS = frozenset(
     {"foo", "bar", "baz", "example", "sample", "demo", "test", "your-path", "path-to"}
 )
@@ -83,7 +86,13 @@ def detect_windows_scripts(snapshot: Snapshot) -> RuleOutcome:
 
     raw = snapshot.raw_windows_scripts
     if raw > count:
-        basis += f"；全树 {raw}，其中 {raw - count} 个位于 build/ 等排除目录"
+        parts: list[str] = []
+        if snapshot.excluded_windows_scripts:
+            parts.append(f"排除目录 {snapshot.excluded_windows_scripts} 个")
+        if snapshot.unlisted_windows_scripts:
+            parts.append(f"BLOB_CAP 未列出 {snapshot.unlisted_windows_scripts} 个")
+        detail = "、".join(parts) or "排除目录或 BLOB_CAP 未列出"
+        basis += f"；全树 {raw}，其中 {raw - count} 个未纳入（{detail}）"
 
     if count == 0:
         return passed(R06, basis)
@@ -112,7 +121,7 @@ def detect_windows_scripts(snapshot: Snapshot) -> RuleOutcome:
         severity=severity,
         hit_count=count,
     )
-    return failed(R06, basis, finding, penalty=penalty)
+    return conclusion(R06, basis, [finding], penalty=penalty)
 
 
 # ---------- R07 no-crossplatform ----------
@@ -181,6 +190,14 @@ def _has_placeholder_segment(matched: str) -> bool:
     return any(segment.lower() in PLACEHOLDER_SEGMENTS for segment in segments if segment)
 
 
+def _is_info_path(path: str) -> bool:
+    if _TEST_FILE_RE.match(_basename(path)):
+        return True
+    if _ext(path) in DOC_EXTENSIONS:
+        return True
+    return any(segment.lower() in INFO_DIR_SEGMENTS for segment in path.split("/")[:-1])
+
+
 def _classify(path: str, line: str, matched: str) -> str:
     if PLACEHOLDER_RE.search(line):
         return "low"
@@ -191,9 +208,7 @@ def _classify(path: str, line: str, matched: str) -> str:
         return "low"
     if _has_placeholder_segment(matched):
         return "low"
-    if path.startswith(INFO_DIR_PREFIXES):
-        return "info"
-    if _ext(path) in DOC_EXTENSIONS:
+    if _is_info_path(path):
         return "info"
     return "high"
 
@@ -280,15 +295,7 @@ def detect_hardcoded_path(snapshot: Snapshot) -> RuleOutcome:
         f"{prefix}，命中 {len(findings)} 个文件"
         f"（high {high_files} / low {low_files} / info {info_files}）"
     )
-    return RuleOutcome(
-        status="fail",
-        basis=basis,
-        finding=findings[0],
-        file=findings[0].file,
-        line=findings[0].line,
-        penalty=penalty,
-        extra_findings=findings[1:],
-    )
+    return conclusion(R08, basis, findings, penalty=penalty)
 
 
 R06 = Rule(

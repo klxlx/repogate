@@ -11,6 +11,7 @@ from ..snapshot import Snapshot
 from .base import (
     Rule,
     RuleOutcome,
+    conclusion,
     degraded,
     degraded_finding,
     failed,
@@ -248,10 +249,10 @@ def detect_deps_unpinned(snapshot: Snapshot) -> RuleOutcome:
         fix="固定依赖版本，并提交对应 lockfile",
         file=primary,
     )
-    return failed(
+    return conclusion(
         R04,
         f"{pick.basis()} 浮动 {floating} 个 / 总计 {total} 个（>50%），无 lockfile",
-        finding,
+        [finding],
     )
 
 

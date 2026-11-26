@@ -9,7 +9,7 @@ from ..masking import mask_evidence
 from ..models import Finding, RuleInfo
 from ..snapshot import Snapshot
 
-OutcomeStatus = Literal["pass", "fail", "degraded"]
+OutcomeStatus = Literal["pass", "fail", "degraded", "n/a"]
 
 
 @dataclass
@@ -85,6 +85,11 @@ def failed(rule: Rule, basis: str, finding: Finding) -> RuleOutcome:
         file=finding.file,
         line=finding.line,
     )
+
+
+def na(rule: Rule, basis: str, *, file: str = "", line: int = 0) -> RuleOutcome:
+    """不适用：既不是通过也不是失败，评分时不计入分母（接口预留）。"""
+    return RuleOutcome(status="n/a", basis=basis, file=file, line=line)
 
 
 def degraded(

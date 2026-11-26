@@ -81,7 +81,7 @@ class Check(BaseModel):
     """每条规则的三态结论：pass / fail / degraded，basis 必须可复核。"""
 
     rule_id: str
-    status: Literal["pass", "fail", "degraded"]
+    status: Literal["pass", "fail", "degraded", "n/a"]
     basis: str
     file: str = ""
     line: int = 0

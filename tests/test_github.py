@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
+import logging
 
 import httpx
+import pytest
 
+from app.errors import ScanError
 from app.github import GitHubClient, parse_repo_url
 
 
@@ -32,11 +36,70 @@ def test_parse_repo_url_accepts_git_suffix_and_trailing_slash() -> None:
 
 
 def test_parse_repo_url_rejects_non_github() -> None:
-    import pytest
-
-    from app.errors import ScanError
-
     with pytest.raises(ScanError) as caught:
         parse_repo_url("https://gitlab.com/owner/repo")
 
     assert caught.value.code == "INVALID_URL"
+
+
+def test_token_is_sent_in_header_but_never_logged(monkeypatch, caplog) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "dummy-token-do-not-log")
+    seen: list[str] = []
+
+    async def run() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers.get("authorization", ""))
+            return httpx.Response(200, json={"full_name": "a/b"})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            gh = GitHubClient(client)
+            with caplog.at_level(logging.DEBUG):
+                await gh.get_repo("a", "b")
+
+    asyncio.run(run())
+
+    assert seen == ["Bearer dummy-token-do-not-log"]
+    assert "dummy-token-do-not-log" not in caplog.text
+
+
+def test_rate_limit_message_contains_reset_time() -> None:
+    reset_at = 1700000000
+    expected = datetime.datetime.fromtimestamp(reset_at).strftime("%H:%M")
+
+    async def run() -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                headers={"X-RateLimit-Reset": str(reset_at)},
+                json={"message": "API rate limit exceeded"},
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            gh = GitHubClient(client)
+            with pytest.raises(ScanError) as caught:
+                await gh.get_repo("a", "b")
+
+        assert caught.value.code == "RATE_LIMITED"
+        assert f"预计 {expected} 恢复" in caught.value.message
+        assert "GITHUB_TOKEN" in caught.value.message
+
+    asyncio.run(run())
+
+
+def test_rate_limit_without_reset_header_keeps_generic_message() -> None:
+    async def run() -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, json={"message": "Forbidden"})
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            gh = GitHubClient(client)
+            with pytest.raises(ScanError) as caught:
+                await gh.get_repo("a", "b")
+
+        assert caught.value.code == "RATE_LIMITED"
+        assert "配额已耗尽" not in caught.value.message
+
+    asyncio.run(run())

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -87,6 +89,9 @@ class GitHubClient:
             "User-Agent": USER_AGENT,
             "X-GitHub-Api-Version": "2022-11-28",
         }
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            self._headers["Authorization"] = f"Bearer {token}"
 
     def _begin_request(self, method: str, url: str, extra: bool = False) -> None:
         if self.request_count >= MAX_API_REQUESTS and not extra:
@@ -102,11 +107,11 @@ class GitHubClient:
             url,
         )
 
-    def _map_status(self, status: int) -> None:
+    def _map_status(self, status: int, headers: httpx.Headers) -> None:
         if status == 404:
             raise not_found()
         if status in (403, 429):
-            raise rate_limited()
+            raise rate_limited(_reset_hhmm(headers))
         if status >= 400:
             raise upstream(f"GitHub 返回 HTTP {status}")
 
@@ -123,7 +128,7 @@ class GitHubClient:
             logger.info("tree ref missing status=%d url=%s", response.status_code, url)
             return None
 
-        self._map_status(response.status_code)
+        self._map_status(response.status_code, response.headers)
         try:
             payload = response.json()
         except (json.JSONDecodeError, ValueError) as exc:
@@ -159,6 +164,21 @@ class GitHubClient:
         if tree is None:
             raise fetch_failed("commit 与默认分支都无法解析为文件树")
         return tree, True
+
+
+def _reset_hhmm(headers: httpx.Headers) -> str | None:
+    """把 X-RateLimit-Reset（epoch 秒）转成本地 HH:MM；解析失败就不带恢复时间。"""
+    raw = headers.get("x-ratelimit-reset")
+    if not raw:
+        return None
+    try:
+        timestamp = int(raw)
+    except (TypeError, ValueError):
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M")
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _normalize_repo(meta: dict) -> dict:

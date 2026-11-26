@@ -6,6 +6,7 @@ import re
 
 from ..snapshot import Snapshot
 from .base import Rule, RuleOutcome, degraded, failed, make_finding, passed
+from .evidence import select
 
 README_PATTERN = re.compile(r"^readme(\.(md|markdown|rst|txt))?$", re.IGNORECASE)
 README_HEAD_BYTES = 20 * 1024
@@ -21,12 +22,8 @@ CATEGORY_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def find_root_readme(snapshot: Snapshot) -> str | None:
-    candidates = [blob.path for blob in snapshot.root_blobs() if README_PATTERN.match(blob.path)]
-    if not candidates:
-        return None
-    # 有扩展名的优先（README.md 优于无扩展 README），再按字典序
-    return sorted(candidates, key=lambda name: (0 if "." in name else 1, name.lower()))[0]
+def is_readme(path: str) -> bool:
+    return bool(README_PATTERN.match(path.rsplit("/", 1)[-1]))
 
 
 def _covers(text: str, markers: tuple[str, ...]) -> bool:
@@ -34,44 +31,48 @@ def _covers(text: str, markers: tuple[str, ...]) -> bool:
 
 
 def detect_readme_missing(snapshot: Snapshot) -> RuleOutcome:
-    readme = find_root_readme(snapshot)
-    if readme is not None:
-        suffix = "（根目录，无扩展名）" if "." not in readme else "（根目录）"
-        return passed(R01, f"命中 README{suffix}", file=readme)
+    pick = select(snapshot.blobs, is_readme)
+    if pick is None:
+        finding = make_finding(
+            R01,
+            title="缺少 README 说明文件",
+            evidence="未找到 README.md / .markdown / .rst / .txt 或无扩展 README（已检查根目录与一层子目录）",
+            impact="外部使用者无法快速了解仓库用途、安装与运行方式，接入评估缺少第一手信息",
+            fix="在根目录补充 README.md，至少说明用途、安装、运行与依赖",
+        )
+        return failed(R01, "根目录与一层普通子目录均无 README", finding)
 
-    finding = make_finding(
-        R01,
-        title="缺少 README 说明文件",
-        evidence="未找到 README.md / .markdown / .rst / .txt 或无扩展 README（已检查根目录）",
-        impact="外部使用者无法快速了解仓库用途、安装与运行方式，接入评估缺少第一手信息",
-        fix="在根目录补充 README.md，至少说明用途、安装、运行与依赖",
-    )
-    return failed(
-        R01,
-        "根目录无 README（已检查 .md/.markdown/.rst/.txt 与无扩展 README）",
-        finding,
-    )
+    if pick.weak:
+        return degraded(R01, pick.basis(), file=pick.path)
+
+    name = pick.path.rsplit("/", 1)[-1]
+    suffix = "（无扩展名）" if "." not in name else ""
+    return passed(R01, f"{pick.basis()}{suffix}", file=pick.path)
 
 
 def detect_readme_incomplete(snapshot: Snapshot) -> RuleOutcome:
-    readme = find_root_readme(snapshot)
-    if readme is None:
+    pick = select(snapshot.blobs, is_readme)
+    if pick is None:
         return degraded(R02, "未评估：R01 未通过，缺少 README")
-
-    if not snapshot.has_content(readme):
+    if pick.weak:
         return degraded(
-            R02,
-            f"{readme} 读取失败，缺 README 内容，结论不完整",
-            file=readme,
+            R02, f"未评估：README 仅在弱目录 {pick.path}，无法确认主项目", file=pick.path
         )
 
-    text = snapshot.contents[readme][:README_HEAD_BYTES]
+    if not snapshot.has_content(pick.path):
+        return degraded(
+            R02,
+            f"{pick.path} 读取失败，缺 README 内容，结论不完整",
+            file=pick.path,
+        )
+
+    text = snapshot.contents[pick.path][:README_HEAD_BYTES]
     covered = [name for name, markers in CATEGORY_MARKERS if _covers(text, markers)]
     if len(covered) >= 2:
         return passed(
             R02,
-            f"README 覆盖 {len(covered)} 类说明：{'、'.join(covered)}",
-            file=readme,
+            f"{pick.basis()} 覆盖 {len(covered)} 类说明：{'、'.join(covered)}",
+            file=pick.path,
         )
 
     missing = [name for name, _ in CATEGORY_MARKERS if name not in covered]
@@ -85,11 +86,11 @@ def detect_readme_incomplete(snapshot: Snapshot) -> RuleOutcome:
         ),
         impact="使用者难以按文档完成安装与启动，接入成本被低估",
         fix="补齐缺失的说明类别，至少覆盖安装、运行、配置与依赖",
-        file=readme,
+        file=pick.path,
     )
     return failed(
         R02,
-        f"README 缺 {'、'.join(missing)} 类章节（前 20KB 只覆盖 {len(covered)} 类）",
+        f"{pick.basis()} 缺 {'、'.join(missing)} 类章节（前 20KB 只覆盖 {len(covered)} 类）",
         finding,
     )
 

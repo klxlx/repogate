@@ -181,15 +181,17 @@ def test_api_checks_cover_every_rule_and_match_findings(monkeypatch) -> None:
     assert [check["rule_id"] for check in checks] == ["R01", "R02", "R03", "R04", "R05"]
     assert len(checks) == 5
     for check in checks:
-        assert check["status"] in {"pass", "fail", "degraded"}
+        assert check["status"] in {"pass", "fail", "degraded", "n/a"}
         assert check["basis"].strip()
         assert "file" in check and "line" in check
 
     fail_rules = {check["rule_id"] for check in checks if check["status"] == "fail"}
-    pass_rules = {check["rule_id"] for check in checks if check["status"] == "pass"}
+    clean_rules = {
+        check["rule_id"] for check in checks if check["status"] in ("pass", "n/a")
+    }
     finding_rules = {finding["rule_id"] for finding in body["findings"]}
     assert fail_rules <= finding_rules
-    assert not (pass_rules & finding_rules)
+    assert not (clean_rules & finding_rules)
 
 
 def test_api_passes_source_flags(monkeypatch) -> None:

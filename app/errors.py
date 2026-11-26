@@ -21,7 +21,14 @@ def not_found(message: str = "仓库不存在或不是公开仓库（GitHub 返�
     return ScanError("NOT_FOUND", message, 404)
 
 
-def rate_limited(message: str = "GitHub 接口限流或拒绝访问（403/429），请稍后重试") -> ScanError:
+def rate_limited(reset_hhmm: str | None = None) -> ScanError:
+    if reset_hhmm:
+        message = (
+            f"GitHub 配额已耗尽，预计 {reset_hhmm} 恢复；"
+            "本地可设置 GITHUB_TOKEN 提升到 5000 次/时"
+        )
+    else:
+        message = "GitHub 接口限流或拒绝访问（403/429），请稍后重试"
     return ScanError("RATE_LIMITED", message, 429)
 
 

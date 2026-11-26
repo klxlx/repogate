@@ -301,6 +301,11 @@ h2 {
   color: #b54708;
 }
 
+.state-na {
+  background: #f2f4f7;
+  color: #667085;
+}
+
 .evidence {
   color: #475467;
   font-size: 12.5px;

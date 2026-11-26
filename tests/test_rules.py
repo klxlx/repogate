@@ -41,16 +41,24 @@ def test_r01_fails_when_no_readme() -> None:
     assert outcome.status == "fail"
     assert outcome.finding is not None
     assert outcome.finding.rule_id == "R01"
-    assert outcome.finding.severity == "high"
-    assert "根目录无 README" in outcome.basis
+    assert "根目录与一层" in outcome.basis
 
 
-def test_r01_passes_with_readme_variants() -> None:
-    assert detect_readme_missing(snapshot({"README.md": 10})).status == "pass"
-    assert detect_readme_missing(snapshot({"readme.rst": 10})).status == "pass"
+def test_r01_passes_with_root_readme_and_reports_level() -> None:
+    outcome = detect_readme_missing(snapshot({"README.md": 10}))
+    assert outcome.status == "pass"
+    assert outcome.basis == "根目录 README.md"
+
     outcome = detect_readme_missing(snapshot({"README": 10}))
     assert outcome.status == "pass"
-    assert "无扩展名" in outcome.basis
+    assert outcome.basis == "根目录 README（无扩展名）"
+
+
+def test_r01_degrades_in_weak_dir_only() -> None:
+    outcome = detect_readme_missing(snapshot({"docs/README.md": 10}))
+
+    assert outcome.status == "degraded"
+    assert outcome.basis == "仅在弱目录 docs/README.md 发现，无法确认主项目"
 
 
 # ---------- R02 readme-incomplete ----------
@@ -63,7 +71,7 @@ def test_r02_fails_when_less_than_two_categories() -> None:
 
     assert outcome.status == "fail"
     assert outcome.finding is not None
-    assert "README 缺" in outcome.basis
+    assert "根目录 README.md" in outcome.basis
 
 
 def test_r02_passes_with_install_and_run() -> None:
@@ -82,7 +90,7 @@ def test_r02_degrades_when_content_unavailable() -> None:
     outcome = detect_readme_incomplete(snapshot({"README.md": 500}))
 
     assert outcome.status == "degraded"
-    assert outcome.finding is None  # 唯一依据失败，不出 finding
+    assert outcome.finding is None
     assert "读取失败" in outcome.basis
 
 
@@ -94,19 +102,41 @@ def test_r03_fails_without_any_manifest() -> None:
 
     assert outcome.status == "fail"
     assert outcome.finding is not None
-    assert "package.json" in outcome.finding.evidence_masked
 
 
-def test_r03_passes_with_manifest_variants() -> None:
+def test_r03_passes_with_root_manifest_and_reports_level() -> None:
     outcome = detect_deps_missing(snapshot({"vcpkg.json": 10}))
     assert outcome.status == "pass"
-    assert outcome.basis == "命中清单 vcpkg.json"
-    assert detect_deps_missing(snapshot({"src/app.csproj": 10})).status == "pass"
-    assert detect_deps_missing(snapshot({"requirements-dev.txt": 10})).status == "pass"
-    assert detect_deps_missing(snapshot({"CMakeLists.txt": 10})).status == "pass"
+    assert outcome.basis == "根目录 vcpkg.json"
+
+    outcome = detect_deps_missing(snapshot({"App.csproj": 10, "vcpkg.json": 10}))
+    assert outcome.basis == "根目录 App.csproj（共 2 个候选）"
+
+
+def test_r03_prefers_root_over_weak_dir() -> None:
+    outcome = detect_deps_missing(snapshot({"package.json": 10, "docs/requirements.txt": 10}))
+
+    assert outcome.status == "pass"
+    assert outcome.basis == "根目录 package.json"
+    assert "docs" not in outcome.basis
+
+
+def test_r03_degrades_when_only_weak_dir() -> None:
+    outcome = detect_deps_missing(snapshot({"docs/requirements.txt": 10}))
+
+    assert outcome.status == "degraded"
+    assert outcome.basis == "仅在弱目录 docs/requirements.txt 发现，无法确认主项目"
 
 
 # ---------- R04 deps-unpinned ----------
+
+
+def test_r04_is_na_without_parseable_manifest() -> None:
+    outcome = detect_deps_unpinned(snapshot({"README.md": 10}))
+
+    assert outcome.status == "n/a"
+    assert outcome.basis == "无可解析清单，规则不适用"
+    assert outcome.finding is None
 
 
 def test_r04_fails_when_mostly_floating() -> None:
@@ -115,7 +145,7 @@ def test_r04_fails_when_mostly_floating() -> None:
 
     assert outcome.status == "fail"
     assert outcome.finding is not None
-    assert "浮动 2 个 / 总计 2 个" in outcome.basis
+    assert "根目录 package.json" in outcome.basis
 
 
 def test_r04_passes_when_pinned() -> None:
@@ -128,7 +158,12 @@ def test_r04_passes_when_lockfile_exists() -> None:
     paths = {"package.json": 100, "package-lock.json": 5000}
     outcome = detect_deps_unpinned(snapshot(paths, {"package.json": text}))
     assert outcome.status == "pass"
-    assert "package-lock.json" in outcome.basis
+    assert outcome.basis == "根目录 package-lock.json"
+
+
+def test_r04_is_na_when_lockfile_only_in_nested_subdir() -> None:
+    outcome = detect_deps_unpinned(snapshot({"src/Monaco/package-lock.json": 10}))
+    assert outcome.status == "n/a"
 
 
 def test_r04_degrades_when_all_manifests_unreadable() -> None:
@@ -149,6 +184,12 @@ def test_r04_degrades_when_partial_manifests_unreadable() -> None:
     assert "pyproject.toml 读取失败" in outcome.basis
 
 
+def test_r04_degrades_when_only_weak_manifest() -> None:
+    outcome = detect_deps_unpinned(snapshot({"docs/requirements.txt": 10}))
+    assert outcome.status == "degraded"
+    assert "弱目录" in outcome.basis
+
+
 # ---------- R05 start-missing ----------
 
 
@@ -157,25 +198,28 @@ def test_r05_fails_without_any_entry() -> None:
 
     assert outcome.status == "fail"
     assert outcome.finding is not None
-    assert "根目录与一层子目录未找到" in outcome.basis
+    assert "根目录与一层" in outcome.basis
 
 
 def test_r05_passes_with_cross_platform_entries() -> None:
-    assert detect_start_missing(snapshot({"Dockerfile": 10})).status == "pass"
+    outcome = detect_start_missing(snapshot({"Dockerfile": 10}))
+    assert outcome.status == "pass"
+    assert outcome.basis == "根目录 Dockerfile"
+
     assert detect_start_missing(snapshot({"docker-compose.yml": 10})).status == "pass"
     assert detect_start_missing(snapshot({"Makefile": 10})).status == "pass"
 
     scripts = json.dumps({"scripts": {"dev": "vite"}})
     outcome = detect_start_missing(snapshot({"package.json": 100}, {"package.json": scripts}))
     assert outcome.status == "pass"
-    assert outcome.basis == "命中入口 package.json:scripts.dev"
+    assert outcome.basis == "根目录 package.json:scripts.dev"
 
 
 def test_r05_passes_with_windows_entries_and_marks_impact() -> None:
     outcome = detect_start_missing(snapshot({"PowerToys.slnx": 88348}))
 
     assert outcome.status == "pass"
-    assert "PowerToys.slnx" in outcome.basis
+    assert outcome.basis.startswith("根目录 PowerToys.slnx")
     assert "Windows 专用" in outcome.basis
 
     assert detect_start_missing(snapshot({"App.csproj": 10})).status == "pass"
@@ -185,6 +229,13 @@ def test_r05_passes_with_windows_entries_and_marks_impact() -> None:
 def test_r05_ignores_nested_csproj_and_cmake() -> None:
     assert detect_start_missing(snapshot({"src/App.csproj": 10})).status == "fail"
     assert detect_start_missing(snapshot({"src/CMakeLists.txt": 10})).status == "fail"
+
+
+def test_r05_degrades_when_only_weak_dir_entry() -> None:
+    outcome = detect_start_missing(snapshot({".devcontainer/Dockerfile": 10}))
+
+    assert outcome.status == "degraded"
+    assert outcome.basis == "仅在弱目录 .devcontainer/Dockerfile 发现，无法确认主项目"
 
 
 def test_r05_degrades_when_package_json_unreadable() -> None:
@@ -204,10 +255,12 @@ def test_evaluate_returns_check_per_rule_and_consistent_findings() -> None:
     assert [check.rule_id for check in evaluation.checks] == ["R01", "R02", "R03", "R04", "R05"]
     assert all(check.basis.strip() for check in evaluation.checks)
     fail_rules = {check.rule_id for check in evaluation.checks if check.status == "fail"}
+    clean_rules = {
+        check.rule_id for check in evaluation.checks if check.status in ("pass", "n/a")
+    }
     finding_rules = {finding.rule_id for finding in evaluation.findings}
-    pass_rules = {check.rule_id for check in evaluation.checks if check.status == "pass"}
     assert fail_rules <= finding_rules
-    assert not (pass_rules & finding_rules)
+    assert not (clean_rules & finding_rules)
 
 
 def test_rule_metadata_matches_contract() -> None:

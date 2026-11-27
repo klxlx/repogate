@@ -82,6 +82,45 @@ def test_atom_404_falls_back_to_api_meta_then_atom(monkeypatch) -> None:
     asyncio.run(run())
 
 
+def test_atom_network_failure_falls_back_to_api_commits(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def run() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(str(request.url))
+            if request.url.host == "github.com":
+                raise httpx.ConnectTimeout("atom unreachable", request=request)
+            if request.url.path.endswith("/commits/main"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "sha": ATOM_SHA,
+                        "commit": {
+                            "message": "API fallback commit",
+                            "author": {"name": "Octo Cat", "date": "2025-01-02T03:04:05Z"},
+                        },
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={"default_branch": "main", "full_name": "octocat/Hello-World"},
+            )
+
+        async def fake_client() -> httpx.AsyncClient:
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        monkeypatch.setattr("app.github.get_client", fake_client)
+        head = await resolve_head("https://github.com/octocat/Hello-World", branch="old-name")
+
+        assert head.commit_sha == ATOM_SHA
+        assert head.ref == "main"
+        assert head.commit["message"] == "API fallback commit"
+        assert head.request_count == 2
+        assert any(url.endswith("/commits/main") for url in calls)
+
+    asyncio.run(run())
+
+
 def test_tree_falls_back_to_branch_on_404() -> None:
     async def run() -> None:
         def handler(request: httpx.Request) -> httpx.Response:

@@ -1,4 +1,8 @@
 # 环境与缓存
+.venv/
+.env
+.env.*
+!.env.example
 .cache/
 __pycache__/
 *.py[cod]

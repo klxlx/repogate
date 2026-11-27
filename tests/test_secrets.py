@@ -19,6 +19,9 @@ FIXTURES = Path(__file__).parent / "fixtures" / "secrets"
 
 
 def fixture(name: str) -> str:
+    # 夹具文件名不能叫 .env，否则公开仓库会真的出现 .env；虚拟路径仍按 .env 测。
+    if name == ".env":
+        name = "env.fixture"
     return (FIXTURES / name).read_text(encoding="utf-8")
 
 

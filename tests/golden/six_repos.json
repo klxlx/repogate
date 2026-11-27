@@ -2,6 +2,166 @@
   "schema_version": 1,
   "repos": [
     {
+      "repo": "fastapi/full-stack-fastapi-template",
+      "commit": "f8c6c147b12bb1c4d3253cc1b06f8b5ef81b10dd",
+      "score": {
+        "total": 73,
+        "grade": "B"
+      },
+      "checks": {
+        "R01": "pass",
+        "R02": "fail",
+        "R03": "pass",
+        "R04": "pass",
+        "R05": "pass",
+        "R06": "pass",
+        "R07": "n/a",
+        "R08": "pass",
+        "R09": "fail",
+        "R10": "pass",
+        "R11": "pass",
+        "R12": "pass",
+        "R13": "pass",
+        "R14": "pass"
+      },
+      "finding_counts": {
+        "R01": 0,
+        "R02": 1,
+        "R03": 0,
+        "R04": 0,
+        "R05": 0,
+        "R06": 0,
+        "R07": 0,
+        "R08": 0,
+        "R09": 2,
+        "R10": 0,
+        "R11": 1,
+        "R12": 0,
+        "R13": 0,
+        "R14": 0
+      }
+    },
+    {
+      "repo": "gitleaks/gitleaks",
+      "commit": "5f6ec56cfa6f8c67648d863582c7ae2f206d5c1c",
+      "score": {
+        "total": 98,
+        "grade": "A"
+      },
+      "checks": {
+        "R01": "pass",
+        "R02": "pass",
+        "R03": "pass",
+        "R04": "n/a",
+        "R05": "pass",
+        "R06": "pass",
+        "R07": "n/a",
+        "R08": "fail",
+        "R09": "pass",
+        "R10": "pass",
+        "R11": "pass",
+        "R12": "pass",
+        "R13": "pass",
+        "R14": "pass"
+      },
+      "finding_counts": {
+        "R01": 0,
+        "R02": 0,
+        "R03": 0,
+        "R04": 0,
+        "R05": 0,
+        "R06": 0,
+        "R07": 0,
+        "R08": 3,
+        "R09": 2,
+        "R10": 0,
+        "R11": 5,
+        "R12": 0,
+        "R13": 0,
+        "R14": 0
+      }
+    },
+    {
+      "repo": "microsoft/PowerToys",
+      "commit": "d6d60a0dcef4f75f3342e3085aac0d5d71832372",
+      "score": {
+        "total": 84,
+        "grade": "B"
+      },
+      "checks": {
+        "R01": "pass",
+        "R02": "pass",
+        "R03": "pass",
+        "R04": "n/a",
+        "R05": "pass",
+        "R06": "fail",
+        "R07": "fail",
+        "R08": "fail",
+        "R09": "pass",
+        "R10": "pass",
+        "R11": "pass",
+        "R12": "pass",
+        "R13": "pass",
+        "R14": "pass"
+      },
+      "finding_counts": {
+        "R01": 0,
+        "R02": 0,
+        "R03": 0,
+        "R04": 0,
+        "R05": 0,
+        "R06": 1,
+        "R07": 1,
+        "R08": 3,
+        "R09": 1,
+        "R10": 0,
+        "R11": 1,
+        "R12": 0,
+        "R13": 0,
+        "R14": 0
+      }
+    },
+    {
+      "repo": "microsoft/vscode",
+      "commit": "50267a5daf17c7b6c998d6719121c3910dbe9695",
+      "score": {
+        "total": 91,
+        "grade": "A"
+      },
+      "checks": {
+        "R01": "pass",
+        "R02": "pass",
+        "R03": "pass",
+        "R04": "pass",
+        "R05": "pass",
+        "R06": "fail",
+        "R07": "pass",
+        "R08": "pass",
+        "R09": "pass",
+        "R10": "pass",
+        "R11": "pass",
+        "R12": "pass",
+        "R13": "pass",
+        "R14": "pass"
+      },
+      "finding_counts": {
+        "R01": 0,
+        "R02": 0,
+        "R03": 0,
+        "R04": 0,
+        "R05": 0,
+        "R06": 1,
+        "R07": 0,
+        "R08": 1,
+        "R09": 1,
+        "R10": 1,
+        "R11": 1,
+        "R12": 0,
+        "R13": 0,
+        "R14": 0
+      }
+    },
+    {
       "repo": "octocat/Hello-World",
       "commit": "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
       "score": {
@@ -76,166 +236,6 @@
         "R09": 1,
         "R10": 4,
         "R11": 0,
-        "R12": 0,
-        "R13": 0,
-        "R14": 0
-      }
-    },
-    {
-      "repo": "microsoft/PowerToys",
-      "commit": "d6d60a0dcef4f75f3342e3085aac0d5d71832372",
-      "score": {
-        "total": 84,
-        "grade": "B"
-      },
-      "checks": {
-        "R01": "pass",
-        "R02": "pass",
-        "R03": "pass",
-        "R04": "n/a",
-        "R05": "pass",
-        "R06": "fail",
-        "R07": "fail",
-        "R08": "fail",
-        "R09": "pass",
-        "R10": "pass",
-        "R11": "pass",
-        "R12": "pass",
-        "R13": "pass",
-        "R14": "pass"
-      },
-      "finding_counts": {
-        "R01": 0,
-        "R02": 0,
-        "R03": 0,
-        "R04": 0,
-        "R05": 0,
-        "R06": 1,
-        "R07": 1,
-        "R08": 3,
-        "R09": 1,
-        "R10": 0,
-        "R11": 1,
-        "R12": 0,
-        "R13": 0,
-        "R14": 0
-      }
-    },
-    {
-      "repo": "microsoft/vscode",
-      "commit": "cdd865e1cab16622ca82fa94cf97e5586dbb5386",
-      "score": {
-        "total": 91,
-        "grade": "A"
-      },
-      "checks": {
-        "R01": "pass",
-        "R02": "pass",
-        "R03": "pass",
-        "R04": "pass",
-        "R05": "pass",
-        "R06": "fail",
-        "R07": "pass",
-        "R08": "pass",
-        "R09": "pass",
-        "R10": "pass",
-        "R11": "pass",
-        "R12": "pass",
-        "R13": "pass",
-        "R14": "pass"
-      },
-      "finding_counts": {
-        "R01": 0,
-        "R02": 0,
-        "R03": 0,
-        "R04": 0,
-        "R05": 0,
-        "R06": 1,
-        "R07": 0,
-        "R08": 1,
-        "R09": 1,
-        "R10": 1,
-        "R11": 1,
-        "R12": 0,
-        "R13": 0,
-        "R14": 0
-      }
-    },
-    {
-      "repo": "gitleaks/gitleaks",
-      "commit": "5f6ec56cfa6f8c67648d863582c7ae2f206d5c1c",
-      "score": {
-        "total": 98,
-        "grade": "A"
-      },
-      "checks": {
-        "R01": "pass",
-        "R02": "pass",
-        "R03": "pass",
-        "R04": "n/a",
-        "R05": "pass",
-        "R06": "pass",
-        "R07": "n/a",
-        "R08": "fail",
-        "R09": "pass",
-        "R10": "pass",
-        "R11": "pass",
-        "R12": "pass",
-        "R13": "pass",
-        "R14": "pass"
-      },
-      "finding_counts": {
-        "R01": 0,
-        "R02": 0,
-        "R03": 0,
-        "R04": 0,
-        "R05": 0,
-        "R06": 0,
-        "R07": 0,
-        "R08": 3,
-        "R09": 2,
-        "R10": 0,
-        "R11": 5,
-        "R12": 0,
-        "R13": 0,
-        "R14": 0
-      }
-    },
-    {
-      "repo": "fastapi/full-stack-fastapi-template",
-      "commit": "f8c6c147b12bb1c4d3253cc1b06f8b5ef81b10dd",
-      "score": {
-        "total": 73,
-        "grade": "B"
-      },
-      "checks": {
-        "R01": "pass",
-        "R02": "fail",
-        "R03": "pass",
-        "R04": "pass",
-        "R05": "pass",
-        "R06": "pass",
-        "R07": "n/a",
-        "R08": "pass",
-        "R09": "fail",
-        "R10": "pass",
-        "R11": "pass",
-        "R12": "pass",
-        "R13": "pass",
-        "R14": "pass"
-      },
-      "finding_counts": {
-        "R01": 0,
-        "R02": 1,
-        "R03": 0,
-        "R04": 0,
-        "R05": 0,
-        "R06": 0,
-        "R07": 0,
-        "R08": 0,
-        "R09": 2,
-        "R10": 0,
-        "R11": 1,
         "R12": 0,
         "R13": 0,
         "R14": 0

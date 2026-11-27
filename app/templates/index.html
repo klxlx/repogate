@@ -9,12 +9,12 @@
 <body>
   <main class="shell">
     <header class="masthead">
-      <p class="eyebrow">RepoGate / 第 7 步（v3.2）：atom HEAD + AI 建议</p>
+      <p class="eyebrow">RepoGate / v3.2 · 公开仓库接入检查</p>
       <h1>这个仓库，能不能进内网？</h1>
-      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；14 条规则合成 0–100 分与一句话裁决。报告按 commit 内容寻址缓存，限流时返回带 stale 标记的旧报告。</p>
+      <p class="lede">只读当前快照：不 clone、不执行仓库代码、不扫 Git 历史；14 条规则合成 0–100 分与一句话裁决。报告按 commit + 引擎版本内容寻址缓存，限流时返回带 stale 标记的旧报告。</p>
     </header>
 
-    <form class="lookup" method="post" action="/">
+    <form class="lookup" method="post" action="/" novalidate>
       <label class="sr-only" for="repo_url">仓库地址</label>
       <input
         id="repo_url"
@@ -28,6 +28,23 @@
       >
       <button type="submit">检查</button>
     </form>
+    <div class="examples" aria-label="示例仓库">
+      <span class="examples-label">试试：</span>
+      <button type="button" class="example" data-repo="https://github.com/octocat/Hello-World">octocat / Hello-World</button>
+      <button type="button" class="example" data-repo="https://github.com/psf/requests">psf / requests</button>
+      <button type="button" class="example" data-repo="https://github.com/microsoft/vscode">microsoft / vscode</button>
+    </div>
+    <p class="form-hint" id="repo-hint" role="alert" hidden>请输入 GitHub 仓库主页，例如 https://github.com/owner/repo。</p>
+
+    <section class="skeleton" id="scan-skeleton" aria-label="正在检查" hidden>
+      <div class="skeleton-card">
+        <span class="skeleton-pill"></span>
+        <span class="skeleton-line wide"></span>
+        <span class="skeleton-line"></span>
+        <span class="skeleton-line short"></span>
+      </div>
+      <p>正在读取当前快照并跑 14 条规则……</p>
+    </section>
 
     {% if error %}
     <section class="alert" role="alert">
@@ -209,7 +226,33 @@
     </section>
 
     <section class="card advice-card">
-      <p class="eyebrow">建议</p>
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">建议 / 01</p>
+          <h2>整改建议</h2>
+        </div>
+        <p class="card-hint">按风险等级排序的前 3 条；完整证据见上方风险表。</p>
+      </div>
+      {% if suggestion_rows %}
+      <ol class="suggestion-list">
+        {% for item in suggestion_rows %}
+        <li>
+          <div class="suggestion-head">
+            <span class="mono">{{ item.rule_id }}</span>
+            <span class="sev sev-{{ item.severity }}">{{ item.severity }}</span>
+            <span class="mono suggestion-file">{{ item.file or "—" }}{% if item.line %}:{{ item.line }}{% endif %}</span>
+          </div>
+          <p>{{ item.fix }}</p>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="empty">没有需要整改的项。</p>
+      {% endif %}
+    </section>
+
+    <section class="card advice-card">
+      <p class="eyebrow">AI / 02</p>
       {% if advice and advice.source == "model" %}
       <div class="advice-head">
         <h2>AI 接入建议</h2>
@@ -287,6 +330,50 @@
       })();
     </script>
     {% endif %}
+    <script>
+      (function () {
+        var form = document.querySelector(".lookup");
+        var input = document.getElementById("repo_url");
+        var hint = document.getElementById("repo-hint");
+        var skeleton = document.getElementById("scan-skeleton");
+        var submit = form && form.querySelector('button[type="submit"]');
+        if (!form || !input) return;
+
+        function isGitHubRepo(value) {
+          try {
+            var url = new URL(value.trim());
+            if (url.protocol !== "https:" || url.hostname !== "github.com") return false;
+            var parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+            return parts.length === 2 && /^[A-Za-z0-9_.-]+$/.test(parts[0]) && /^[A-Za-z0-9_.-]+$/.test(parts[1]);
+          } catch (error) {
+            return false;
+          }
+        }
+
+        document.querySelectorAll(".example").forEach(function (button) {
+          button.addEventListener("click", function () {
+            input.value = button.getAttribute("data-repo") || "";
+            if (hint) hint.hidden = true;
+            input.focus();
+          });
+        });
+
+        form.addEventListener("submit", function (event) {
+          if (!isGitHubRepo(input.value)) {
+            event.preventDefault();
+            if (hint) hint.hidden = false;
+            input.focus();
+            return;
+          }
+          if (hint) hint.hidden = true;
+          if (skeleton) skeleton.hidden = false;
+          if (submit) {
+            submit.disabled = true;
+            submit.textContent = "检查中…";
+          }
+        });
+      })();
+    </script>
   </main>
 </body>
 </html>

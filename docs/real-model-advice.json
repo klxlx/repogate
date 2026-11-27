@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "ok": true,
+  "source": "model",
+  "model": "deepseek-flash",
+  "prompt_version": "advice-v2",
+  "latency_ms": 2828,
+  "tokens": 1467,
+  "summary": "仓库缺少依赖清单与构建入口，README 无有效说明，建议补齐依赖与启动文档并加 .gitignore。",
+  "actions": [
+    {
+      "title": "补充依赖清单",
+      "why": "R03 未找到任何依赖清单，供应链风险不可评估",
+      "how": "在根目录新增对应生态的依赖清单文件，锁定依赖来源与版本，并提交审查",
+      "effort": "M",
+      "rule_ids": [
+        "R03"
+      ]
+    },
+    {
+      "title": "补齐构建启动入口",
+      "why": "R05 未找到构建脚本或 start/build 声明",
+      "how": "新增 Makefile 或 Dockerfile 等构建入口，或在依赖清单中声明 start/build 脚本",
+      "effort": "M",
+      "rule_ids": [
+        "R05"
+      ]
+    }
+  ],
+  "caveats": [
+    "当前抽样率 1.0，仅覆盖 1 个文本文件，不代表全仓结论",
+    "R13 显示约 828 天未推送，依赖维护状态需人工确认"
+  ],
+  "cache": {
+    "hit": false,
+    "cached_at": "2026-11-27T01:32:43.872284+00:00"
+  },
+  "warnings": [],
+  "fallback_reason": null,
+  "finding_count": 5,
+  "sampling_ratio": 1.0,
+  "repo": "octocat/Hello-World",
+  "commit_sha": "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d"
+}

@@ -230,6 +230,7 @@ def _result_context(result: InspectResponse) -> dict:
         "dimension_rows": _dimension_rows(result.score),
         "risk_visible": [item for item in ordered if item.severity not in ("low", "info")],
         "risk_hidden": [item for item in ordered if item.severity in ("low", "info")],
+        "suggestion_rows": ordered[:3],
         "blocking_count": sum(1 for item in findings if item.severity == "critical"),
         "high_count": sum(1 for item in findings if item.severity == "high"),
         "sampling_pct": f"{result.stats.secret_sampling_ratio * 100:.2f}%",
@@ -248,15 +249,18 @@ def _cached_response(cached: cache.CachedReport, *, hit: bool, stale: bool) -> I
     result.warnings = []
     result.error = None
     if stale:
-        result.warnings = [
-            WarningInfo(
-                code="STALE_CACHE",
-                message=(
-                    f"上游限流，以下为 {_local_time(cached.cached_at)} 的缓存结果"
-                    f"（commit {result.commit.sha[:7] or result.commit_sha[:7]}），可能已过期"
-                ),
+        if cached.engine_version and cached.engine_version != ENGINE_VERSION:
+            message = (
+                f"缓存来自引擎 {cached.engine_version}，当前为 {ENGINE_VERSION}；"
+                f"以下为 {_local_time(cached.cached_at)} 的旧缓存结果"
+                f"（commit {result.commit.sha[:7] or result.commit_sha[:7]}），已按陈旧展示"
             )
-        ]
+        else:
+            message = (
+                f"上游限流，以下为 {_local_time(cached.cached_at)} 的缓存结果"
+                f"（commit {result.commit.sha[:7] or result.commit_sha[:7]}），可能已过期"
+            )
+        result.warnings = [WarningInfo(code="STALE_CACHE", message=message)]
     return result
 
 
@@ -304,9 +308,9 @@ async def _inspect(repo_url: str, *, refresh: bool = False) -> InspectResponse:
         head: RepoHead = await resolve_head(repo_url, branch=cached_branch)
 
         if not refresh:
-            cached = cache.load(owner, repo, head.commit_sha)
+            cached = cache.load(owner, repo, head.commit_sha, ENGINE_VERSION)
             if cached is not None:
-                logger.info("cache hit %s", cache.cache_key(owner, repo, head.commit_sha))
+                logger.info("cache hit %s", cache.cache_key(owner, repo, head.commit_sha, ENGINE_VERSION))
                 return _cached_response(cached, hit=True, stale=False)
 
         bundle = await fetch_repo_bundle(repo_url, head=head)
@@ -394,7 +398,12 @@ async def _inspect(repo_url: str, *, refresh: bool = False) -> InspectResponse:
 
     try:
         cached_at = cache.save(
-            owner, repo, bundle.commit_sha, report.model_dump(mode="json"), duration_ms
+            owner,
+            repo,
+            bundle.commit_sha,
+            report.model_dump(mode="json"),
+            duration_ms,
+            ENGINE_VERSION,
         )
         report.cache = CacheInfo(hit=False, stale=False, cached_at=cached_at)
     except (OSError, ValueError):

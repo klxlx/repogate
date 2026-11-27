@@ -1,7 +1,8 @@
-"""GitHub 取数：HEAD 走免配额 atom，内容路径为 meta + trees。
+"""GitHub 取数：HEAD 优先走免配额 atom，不可用时回退 API commits。
 
 v3.2 拆成两步：
-- resolve_head：默认分支用 atom feed 解析（1 次非 API 请求），用于命中 commit 缓存；
+- resolve_head：默认分支用 atom feed 解析（1 次非 API 请求）；atom 不可用时
+  用 meta 取默认分支，再以 commits API 拿 HEAD，最后才拉树；
 - fetch_repo_bundle：缓存未命中时补元信息并按 commit SHA 拉文件树。
 """
 
@@ -33,7 +34,7 @@ from .models import TimingInfo
 logger = logging.getLogger("repogate.github")
 
 GITHUB_API = "https://api.github.com"
-MAX_API_REQUESTS = 2  # HEAD 走 atom；首次扫描只允许 meta + tree 两次 API，tree 分支回退另计
+MAX_API_REQUESTS = 3  # 正常首次扫描 meta + tree 两次；atom 不可用时 meta + commits + tree 三次
 MAX_REQUEST_ATTEMPTS = 4  # 仅 tree 按 commit_sha 失败时，允许回退分支名重试一次
 MAX_NETWORK_ATTEMPTS = 3  # 5xx / RemoteProtocolError 共用：首试 + 2 次重试
 RETRY_DELAYS_S = (1.0, 3.0)
@@ -425,8 +426,33 @@ async def resolve_head(raw_url: str, *, branch: str | None = None) -> RepoHead:
             meta_ms=meta_ms,
             request_count=gh.request_count,
         )
-    except AtomUnavailable as exc:
-        raise fetch_failed(f"commits atom 不可用且 API 元信息无法解析 HEAD：{exc}") from exc
+    except AtomUnavailable as atom_exc:
+        logger.warning(
+            "atom unavailable after meta repo=%s/%s branch=%s; fallback commits API: %s",
+            owner,
+            repo,
+            new_branch,
+            atom_exc,
+        )
+        commit_started = time.monotonic()
+        commit_payload = await gh.get_commit(owner, repo, new_branch)
+        commit = _normalize_commit(commit_payload)
+        commit_sha = commit.get("sha") or ""
+        if not _SHA_RE.match(commit_sha):
+            raise fetch_failed("commits API 未返回有效的 40 位 commit SHA") from atom_exc
+        return RepoHead(
+            owner=owner,
+            repo=repo,
+            commit_sha=commit_sha,
+            commit=commit,
+            repo_meta=_normalize_repo(meta),
+            ref=new_branch,
+            request_count=gh.request_count,
+            timing=TimingInfo(
+                meta_ms=meta_ms,
+                commit_ms=_elapsed_ms(commit_started),
+            ),
+        )
 
 
 async def fetch_repo_bundle(raw_url: str, head: RepoHead | None = None) -> RepoBundle:

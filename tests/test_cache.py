@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from app import cache
+from app.version import ENGINE_VERSION
 
 SHA = "a" * 40
 
@@ -18,7 +19,7 @@ def _report(total: int = 100) -> dict:
 def test_cache_path_layout(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("REPOGATE_CACHE_DIR", str(tmp_path))
     path = cache.path_for("octocat", "Hello-World", SHA)
-    assert path == tmp_path / "octocat__Hello-World" / f"{SHA}.json"
+    assert path == tmp_path / "octocat__Hello-World" / f"{ENGINE_VERSION}__{SHA}.json"
 
 
 def test_cache_save_and_load_wrapper(monkeypatch, tmp_path) -> None:
@@ -32,6 +33,7 @@ def test_cache_save_and_load_wrapper(monkeypatch, tmp_path) -> None:
     assert cached.report["score"]["total"] == 100
     wrapper = json.loads(cached.path.read_text(encoding="utf-8"))
     assert wrapper["schema_version"] == 1
+    assert wrapper["engine_version"] == ENGINE_VERSION
     assert wrapper["cached_at"] == cached_at
     assert wrapper["duration_ms"] == 123
     assert wrapper["report"]["ok"] is True
@@ -51,8 +53,8 @@ def test_cache_lru_keeps_latest_five(monkeypatch, tmp_path) -> None:
 
     remaining = sorted(path.name for path in cache.repo_dir("octocat", "Hello-World").glob("*.json"))
     assert len(remaining) == 5
-    assert f"{0:040x}.json" not in remaining
-    assert f"{5:040x}.json" in remaining
+    assert f"{ENGINE_VERSION}__{0:040x}.json" not in remaining
+    assert f"{ENGINE_VERSION}__{5:040x}.json" in remaining
 
 
 def test_cache_latest_skips_corrupt_file(monkeypatch, tmp_path) -> None:
@@ -78,3 +80,13 @@ def test_cache_ignores_wrong_schema(monkeypatch, tmp_path) -> None:
     data["schema_version"] = 0
     path.write_text(json.dumps(data), encoding="utf-8")
     assert cache.load("octocat", "Hello-World", SHA) is None
+
+
+def test_cache_engine_mismatch_is_not_hit_but_latest_stale(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("REPOGATE_CACHE_DIR", str(tmp_path))
+    cache.save("octocat", "Hello-World", SHA, _report(), 1, "repogate-3.1")
+
+    assert cache.load("octocat", "Hello-World", SHA, ENGINE_VERSION) is None
+    latest = cache.load_latest("octocat", "Hello-World")
+    assert latest is not None
+    assert latest.engine_version == "repogate-3.1"

@@ -25,7 +25,7 @@ REPOS = (
     "https://github.com/microsoft/PowerToys",
     "https://github.com/microsoft/vscode",
     "https://github.com/gitleaks/gitleaks",
-    "https://github.com/tiangolo/full-stack-fastapi-template",
+    "https://github.com/fastapi/full-stack-fastapi-template",
 )
 OUT = PROJECT_ROOT / "tests" / "golden" / "six_repos.json"
 

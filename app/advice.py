@@ -480,6 +480,10 @@ async def _call_model(
         "temperature": 0.2,
         "max_tokens": 600,
     }
+    # DeepSeek V4 默认把 600 token 预算全部用在 reasoning_content，content 为空。
+    # 仅对显式配置或 DeepSeek 端点关闭 thinking，保持其他 OpenAI 兼容端点不受影响。
+    if os.environ.get("LLM_DISABLE_THINKING", "").strip() == "1" or "deepseek" in base.lower():
+        payload["thinking"] = {"type": "disabled"}
     started = time.monotonic()
     last_error: Exception | None = None
     for attempt in range(2):

@@ -15,54 +15,54 @@
     "language": "Python",
     "license": "MIT",
     "archived": false,
-    "pushed_at": "2026-11-27T01:49:49Z",
+    "pushed_at": "2026-11-27T01:51:15Z",
     "owner": "klxlx",
     "name": "repogate",
     "default_branch": "master",
-    "head_sha": "f31efbbdb25a44bfa6fc6d88c693193ca190bbe8"
+    "head_sha": "8fee149d9939b5553ad77df5bce5d35883afa0f9"
   },
   "ref": "master",
-  "commit_sha": "f31efbbdb25a44bfa6fc6d88c693193ca190bbe8",
+  "commit_sha": "8fee149d9939b5553ad77df5bce5d35883afa0f9",
   "commit": {
-    "sha": "f31efbbdb25a44bfa6fc6d88c693193ca190bbe8",
-    "message": "feat: 第8步 交付收口（缓存版本、六仓重跑、真实模型建议、README 九节与截图）",
+    "sha": "8fee149d9939b5553ad77df5bce5d35883afa0f9",
+    "message": "docs: 补充自跑仓库 A/94 与缓存命中证据",
     "author": "klxlx",
-    "date": "2026-11-27T01:49:35Z"
+    "date": "2026-11-27T01:51:08Z"
   },
   "scan": {
     "engine_version": "repogate-3.2",
-    "scanned_at": "2026-11-27T09:50:04.457802+08:00",
-    "duration_ms": 17672
+    "scanned_at": "2026-11-27T09:51:26.717729+08:00",
+    "duration_ms": 17730
   },
   "scope": {
-    "files_scanned": 63,
+    "files_scanned": 64,
     "files_skipped": 9,
-    "bytes_scanned": 337706,
+    "bytes_scanned": 361789,
     "truncated": false,
     "truncate_reason": "none"
   },
   "stats": {
-    "text_files": 63,
+    "text_files": 64,
     "windows_script_count": 0,
-    "total_blobs_in_tree": 72,
-    "listed_blobs": 72,
-    "bytes_total_listed": 832778,
+    "total_blobs_in_tree": 73,
+    "listed_blobs": 73,
+    "bytes_total_listed": 856861,
     "unlisted_blobs": 0,
-    "content_requests": 65,
-    "content_bytes": 337706,
+    "content_requests": 68,
+    "content_bytes": 361789,
     "content_failed": 0,
-    "content_files_available": 63,
-    "path_scan_files": 63,
-    "path_scan_bytes": 337706,
-    "content_total_text_files": 63,
-    "secret_scan_files": 63,
-    "secret_scan_bytes": 337706,
+    "content_files_available": 64,
+    "path_scan_files": 64,
+    "path_scan_bytes": 361789,
+    "content_total_text_files": 64,
+    "secret_scan_files": 64,
+    "secret_scan_bytes": 361789,
     "secret_sampling_ratio": 1.0
   },
   "timing": {
-    "meta_ms": 660,
-    "commit_ms": 559,
-    "tree_ms": 393,
+    "meta_ms": 641,
+    "commit_ms": 578,
+    "tree_ms": 374,
     "tree_slow": false,
     "tree_attempts": 1
   },
@@ -89,7 +89,7 @@
     },
     {
       "path": "README.md",
-      "size": 14940,
+      "size": 15135,
       "is_text": true
     },
     {
@@ -218,6 +218,11 @@
       "is_text": true
     },
     {
+      "path": "docs/self-scan.json",
+      "size": 23888,
+      "is_text": true
+    },
+    {
       "path": "docs/six-repos-3.2.md",
       "size": 552,
       "is_text": true
@@ -311,11 +316,6 @@
       "path": "tests/golden/scoring_cases.json",
       "size": 4020,
       "is_text": true
-    },
-    {
-      "path": "tests/golden/six_repos.json",
-      "size": 4906,
-      "is_text": true
     }
   ],
   "findings": [
@@ -344,7 +344,7 @@
       "title": "硬编码路径（high）",
       "file": "app/rules/portability.py",
       "line": 33,
-      "evidence_masked": "抽样 63/63（100.00%），app/rules/portability.py 命中 2 处；前 3 处：app/rules/portability.py:33 C:\\foo）；app/rules/portability.py:207 /home/runner/",
+      "evidence_masked": "抽样 64/64（100.00%），app/rules/portability.py 命中 2 处；前 3 处：app/rules/portability.py:33 C:\\foo）；app/rules/portability.py:207 /home/runner/",
       "impact": "路径绑定本机环境，迁移到容器或 CI 会直接失败",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 2,
@@ -360,7 +360,7 @@
       "title": "硬编码路径（low）",
       "file": "app/masking.py",
       "line": 23,
-      "evidence_masked": "抽样 63/63（100.00%），app/masking.py 命中 1 处；前 3 处：app/masking.py:23 C:\\Users\\)[^\\s]+",
+      "evidence_masked": "抽样 64/64（100.00%），app/masking.py 命中 1 处；前 3 处：app/masking.py:23 C:\\Users\\)[^\\s]+",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 1,
@@ -374,9 +374,25 @@
       "dimension": "portability",
       "severity": "low",
       "title": "硬编码路径（low）",
+      "file": "docs/self-scan.json",
+      "line": 347,
+      "evidence_masked": "抽样 64/64（100.00%），docs/self-scan.json 命中 18 处；前 3 处：docs/self-scan.json:347 C:\\foo）；app/rules/portability.py:207；docs/self-scan.json:347 /home/runner/；docs/self-scan.json:363 C:\\Users\\)[^\\s]+",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 18,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
       "file": "tests/fixtures/paths/.github/workflows/ci.yml",
       "line": 5,
-      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/.github/workflows/ci.yml 命中 1 处；前 3 处：tests/fixtures/paths/.github/workflows/ci.yml:5 /home/runner/work/repo",
+      "evidence_masked": "抽样 64/64（100.00%），tests/fixtures/paths/.github/workflows/ci.yml 命中 1 处；前 3 处：tests/fixtures/paths/.github/workflows/ci.yml:5 /home/runner/work/repo",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 1,
@@ -392,7 +408,7 @@
       "title": "硬编码路径（low）",
       "file": "tests/fixtures/paths/drive.py",
       "line": 1,
-      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/drive.py 命中 1 处；前 3 处：tests/fixtures/paths/drive.py:1 C:\\Users\\alice\\data.csv",
+      "evidence_masked": "抽样 64/64（100.00%），tests/fixtures/paths/drive.py 命中 1 处；前 3 处：tests/fixtures/paths/drive.py:1 C:\\Users\\alice\\data.csv",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 1,
@@ -408,7 +424,7 @@
       "title": "硬编码路径（low）",
       "file": "tests/fixtures/paths/placeholder.py",
       "line": 1,
-      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/placeholder.py 命中 1 处；前 3 处：tests/fixtures/paths/placeholder.py:1 C:\\Users\\%USERPROFILE%\\data",
+      "evidence_masked": "抽样 64/64（100.00%），tests/fixtures/paths/placeholder.py 命中 1 处；前 3 处：tests/fixtures/paths/placeholder.py:1 C:\\Users\\%USERPROFILE%\\data",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 1,
@@ -424,7 +440,7 @@
       "title": "硬编码路径（low）",
       "file": "tests/fixtures/paths/users.md",
       "line": 3,
-      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/users.md 命中 1 处；前 3 处：tests/fixtures/paths/users.md:3 /Users/alice/project/main.py`",
+      "evidence_masked": "抽样 64/64（100.00%），tests/fixtures/paths/users.md 命中 1 处；前 3 处：tests/fixtures/paths/users.md:3 /Users/alice/project/main.py`",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 1,
@@ -440,7 +456,7 @@
       "title": "硬编码路径（low）",
       "file": "tests/test_portability.py",
       "line": 146,
-      "evidence_masked": "抽样 63/63（100.00%），tests/test_portability.py 命中 6 处；前 3 处：tests/test_portability.py:146 \\\\Users\\\\alice\\\\one；tests/test_portability.py:146 /Users/alice/two；tests/test_portability.py:160 \\\\Data\\\\file%d",
+      "evidence_masked": "抽样 64/64（100.00%），tests/test_portability.py 命中 6 处；前 3 处：tests/test_portability.py:146 \\\\Users\\\\alice\\\\one；tests/test_portability.py:146 /Users/alice/two；tests/test_portability.py:160 \\\\Data\\\\file%d",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 6,
@@ -456,7 +472,7 @@
       "title": "硬编码路径（info）",
       "file": "AI_USAGE.md",
       "line": 109,
-      "evidence_masked": "抽样 63/63（100.00%），AI_USAGE.md 命中 5 处；前 3 处：AI_USAGE.md:109 c:\\`；AI_USAGE.md:109 c:\\`；AI_USAGE.md:126 C:\\foo`」。",
+      "evidence_masked": "抽样 64/64（100.00%），AI_USAGE.md 命中 5 处；前 3 处：AI_USAGE.md:109 c:\\`；AI_USAGE.md:109 c:\\`；AI_USAGE.md:126 C:\\foo`」。",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 5,
@@ -472,7 +488,7 @@
       "title": "硬编码路径（info）",
       "file": "README.md",
       "line": 194,
-      "evidence_masked": "抽样 63/63（100.00%），README.md 命中 2 处；前 3 处：README.md:194 c:\\`；README.md:194 c:\\`",
+      "evidence_masked": "抽样 64/64（100.00%），README.md 命中 2 处；前 3 处：README.md:194 c:\\`；README.md:194 c:\\`",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 2,
@@ -488,7 +504,7 @@
       "title": "硬编码路径（info）",
       "file": "tests/fixtures/paths/escape.py",
       "line": 3,
-      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/escape.py 命中 2 处；前 3 处：tests/fixtures/paths/escape.py:3 c:\\Users\\real；tests/fixtures/paths/escape.py:4 C:\\NuGetPackages",
+      "evidence_masked": "抽样 64/64（100.00%），tests/fixtures/paths/escape.py 命中 2 处；前 3 处：tests/fixtures/paths/escape.py:3 c:\\Users\\real；tests/fixtures/paths/escape.py:4 C:\\NuGetPackages",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 2,
@@ -504,7 +520,7 @@
       "title": "硬编码路径（info）",
       "file": "tests/fixtures/paths/unc.py",
       "line": 1,
-      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/unc.py 命中 1 处；前 3 处：tests/fixtures/paths/unc.py:1 \\\\server\\share\\file.txt",
+      "evidence_masked": "抽样 64/64（100.00%），tests/fixtures/paths/unc.py 命中 1 处；前 3 处：tests/fixtures/paths/unc.py:1 \\\\server\\share\\file.txt",
       "impact": "路径是示例/占位符或文档示例，风险较低",
       "fix": "改为相对路径、环境变量或可配置参数",
       "hit_count": 1,
@@ -693,7 +709,7 @@
     {
       "rule_id": "R08",
       "status": "fail",
-      "basis": "抽样 63/63（100.00%），命中 11 个文件（high 1 / low 6 / info 4）；另有提示 10 条",
+      "basis": "抽样 64/64（100.00%），命中 12 个文件（high 1 / low 7 / info 4）；另有提示 11 条",
       "file": "app/rules/portability.py",
       "line": 33
     },
@@ -707,14 +723,14 @@
     {
       "rule_id": "R10",
       "status": "pass",
-      "basis": "抽样 63/63（100.00%），命中 2 个文件；仅提示 2 条",
+      "basis": "抽样 64/64（100.00%），命中 2 个文件；仅提示 2 条",
       "file": "tests/fixtures/secrets/id_rsa",
       "line": 1
     },
     {
       "rule_id": "R11",
       "status": "pass",
-      "basis": "抽样 63/63（100.00%），命中 6 个文件（critical 0）；仅提示 6 条",
+      "basis": "抽样 64/64（100.00%），命中 6 个文件（critical 0）；仅提示 6 条",
       "file": "tests/fixtures/secrets/config.py",
       "line": 1
     },
@@ -801,10 +817,10 @@
   "cache": {
     "hit": false,
     "stale": false,
-    "cached_at": "2026-11-27T09:50:20.514179+08:00"
+    "cached_at": "2026-11-27T09:51:42.850149+08:00"
   },
   "warnings": [],
   "error": null,
   "engine_version": "repogate-3.2",
-  "scanned_at": "2026-11-27T09:50:04.457802+08:00"
+  "scanned_at": "2026-11-27T09:51:26.717729+08:00"
 }

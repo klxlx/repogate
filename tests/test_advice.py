@@ -405,3 +405,43 @@ def test_get_with_repo_renders_shared_report(monkeypatch) -> None:
     assert response.status_code == 200
     assert "59" in response.text
     assert "不建议接入" in response.text
+
+
+def test_repo_without_findings_skips_model_call(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "http://llm.test/v1")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    calls = [0]
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls[0] += 1
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": valid_model_json()}}],
+                "usage": {"total_tokens": 1},
+            },
+        )
+
+    report = make_report()
+    report.findings = []
+    result = asyncio.run(advice.build_advice(report, transport=httpx.MockTransport(handler)))
+    assert result.source == "rules_fallback"
+    assert result.fallback_reason == "no_findings"
+    assert result.actions
+    assert calls[0] == 0
+
+
+def test_page_shows_no_findings_label(monkeypatch) -> None:
+    report = make_report()
+    report.findings = []
+
+    async def fake_inspect(_: str, *, refresh: bool = False) -> InspectResponse:
+        return report
+
+    monkeypatch.setattr(main, "_inspect", fake_inspect)
+    client = TestClient(main.app)
+    response = client.post("/", data={"repo_url": "https://github.com/octocat/Hello-World"})
+    assert response.status_code == 200
+    assert "接入检查结论" in response.text
+    assert "无需整改（无阻断项）" in response.text

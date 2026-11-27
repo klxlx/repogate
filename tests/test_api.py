@@ -132,7 +132,16 @@ def install_fakes(
     return calls, resolves
 
 
-client = TestClient(main.app)
+client: TestClient | None = None
+
+
+@pytest.fixture(autouse=True)
+def fresh_client():
+    """每个用例独立 TestClient，避免上一个用例关闭 portal 后留下已关闭的事件循环。"""
+    global client
+    client = TestClient(main.app)
+    yield
+    client.close()
 
 
 def test_healthz() -> None:
@@ -507,10 +516,10 @@ def test_cache_save_failure_leaves_no_half_file(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(main, "fetch_contents", boom)
 
-    safe_client = StarletteTestClient(main.app, raise_server_exceptions=False)
-    response = safe_client.post(
-        "/api/inspect", json={"repo_url": "https://github.com/octocat/Hello-World"}
-    )
+    with StarletteTestClient(main.app, raise_server_exceptions=False) as safe_client:
+        response = safe_client.post(
+            "/api/inspect", json={"repo_url": "https://github.com/octocat/Hello-World"}
+        )
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "INTERNAL"
     cache_dir = tmp_path / "reports"

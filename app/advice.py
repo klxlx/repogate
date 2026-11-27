@@ -573,6 +573,16 @@ async def build_advice(
             cached.cache = AdviceCacheInfo(hit=True, cached_at=cached.cache.cached_at)
             return cached
 
+    if not result.findings:
+        # 没有 finding 时白名单为空，模型任何动作都会被丢弃；直接给结论，不浪费一次调用。
+        advice = build_rules_fallback(result)
+        advice.fallback_reason = "no_findings"
+        advice.model = configured[2] if configured else None
+        cached_at = _save_cache(path, advice)
+        if cached_at:
+            advice.cache = AdviceCacheInfo(hit=False, cached_at=cached_at)
+        return advice
+
     if configured is None:
         advice = build_rules_fallback(result)
         advice.fallback_reason = "no_api_key" if not os.environ.get("LLM_API_KEY", "").strip() else "missing_config"

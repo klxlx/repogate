@@ -261,8 +261,8 @@
       </div>
       {% else %}
       <div class="advice-head">
-        <h2>接入建议（规则生成）</h2>
-        <span class="advice-badge muted" title="{{ advice.fallback_reason if advice and advice.fallback_reason else '' }}">{% if not advice or not advice.model %}未配置模型{% elif advice.fallback_reason == 'quota_exceeded' %}模型额度不足，已回退{% elif advice.fallback_reason == 'rate_limited' %}模型限流，已回退{% elif advice.fallback_reason == 'timeout' %}模型超时，已回退{% elif advice.fallback_reason == 'auth_error' %}模型鉴权失败，已回退{% elif advice.fallback_reason in ('schema_invalid', 'empty_actions') %}模型输出不合规，已回退{% elif advice.fallback_reason in ('bad_json', 'bad_response') %}模型响应异常，已回退{% elif advice.fallback_reason == 'network_error' %}模型网络异常，已回退{% else %}模型失败，已回退{% endif %}</span>
+        <h2>{% if advice and advice.fallback_reason == 'no_findings' %}接入检查结论{% else %}接入建议（规则生成）{% endif %}</h2>
+        <span class="advice-badge muted" title="{{ advice.fallback_reason if advice and advice.fallback_reason else '' }}">{% if advice and advice.fallback_reason == 'no_findings' %}无需整改（无阻断项）{% elif not advice or not advice.model %}未配置模型{% elif advice.fallback_reason == 'quota_exceeded' %}模型额度不足，已回退{% elif advice.fallback_reason == 'rate_limited' %}模型限流，已回退{% elif advice.fallback_reason == 'timeout' %}模型超时，已回退{% elif advice.fallback_reason == 'auth_error' %}模型鉴权失败，已回退{% elif advice.fallback_reason in ('schema_invalid', 'empty_actions') %}模型输出不合规，已回退{% elif advice.fallback_reason in ('bad_json', 'bad_response') %}模型响应异常，已回退{% elif advice.fallback_reason == 'network_error' %}模型网络异常，已回退{% else %}模型失败，已回退{% endif %}</span>
       </div>
       {% endif %}
       {% if advice %}

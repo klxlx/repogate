@@ -1,0 +1,810 @@
+{
+  "schema_version": 1,
+  "ok": true,
+  "provider": "github",
+  "request_count": 2,
+  "source": {
+    "method": "trees_api",
+    "tree_ref_fallback": false,
+    "tree_truncated_by_github": false
+  },
+  "mode": "metadata",
+  "repo": {
+    "full_name": "klxlx/repogate",
+    "stars": 0,
+    "language": "Python",
+    "license": "MIT",
+    "archived": false,
+    "pushed_at": "2026-11-27T01:49:49Z",
+    "owner": "klxlx",
+    "name": "repogate",
+    "default_branch": "master",
+    "head_sha": "f31efbbdb25a44bfa6fc6d88c693193ca190bbe8"
+  },
+  "ref": "master",
+  "commit_sha": "f31efbbdb25a44bfa6fc6d88c693193ca190bbe8",
+  "commit": {
+    "sha": "f31efbbdb25a44bfa6fc6d88c693193ca190bbe8",
+    "message": "feat: 第8步 交付收口（缓存版本、六仓重跑、真实模型建议、README 九节与截图）",
+    "author": "klxlx",
+    "date": "2026-11-27T01:49:35Z"
+  },
+  "scan": {
+    "engine_version": "repogate-3.2",
+    "scanned_at": "2026-11-27T09:50:04.457802+08:00",
+    "duration_ms": 17672
+  },
+  "scope": {
+    "files_scanned": 63,
+    "files_skipped": 9,
+    "bytes_scanned": 337706,
+    "truncated": false,
+    "truncate_reason": "none"
+  },
+  "stats": {
+    "text_files": 63,
+    "windows_script_count": 0,
+    "total_blobs_in_tree": 72,
+    "listed_blobs": 72,
+    "bytes_total_listed": 832778,
+    "unlisted_blobs": 0,
+    "content_requests": 65,
+    "content_bytes": 337706,
+    "content_failed": 0,
+    "content_files_available": 63,
+    "path_scan_files": 63,
+    "path_scan_bytes": 337706,
+    "content_total_text_files": 63,
+    "secret_scan_files": 63,
+    "secret_scan_bytes": 337706,
+    "secret_sampling_ratio": 1.0
+  },
+  "timing": {
+    "meta_ms": 660,
+    "commit_ms": 559,
+    "tree_ms": 393,
+    "tree_slow": false,
+    "tree_attempts": 1
+  },
+  "files": [
+    {
+      "path": ".env.example",
+      "size": 317,
+      "is_text": true
+    },
+    {
+      "path": ".gitignore",
+      "size": 222,
+      "is_text": true
+    },
+    {
+      "path": "AI_USAGE.md",
+      "size": 10087,
+      "is_text": true
+    },
+    {
+      "path": "LICENSE",
+      "size": 1078,
+      "is_text": true
+    },
+    {
+      "path": "README.md",
+      "size": 14940,
+      "is_text": true
+    },
+    {
+      "path": "app/__init__.py",
+      "size": 28,
+      "is_text": true
+    },
+    {
+      "path": "app/advice.py",
+      "size": 23403,
+      "is_text": true
+    },
+    {
+      "path": "app/cache.py",
+      "size": 6748,
+      "is_text": true
+    },
+    {
+      "path": "app/content.py",
+      "size": 3774,
+      "is_text": true
+    },
+    {
+      "path": "app/errors.py",
+      "size": 3051,
+      "is_text": true
+    },
+    {
+      "path": "app/github.py",
+      "size": 18538,
+      "is_text": true
+    },
+    {
+      "path": "app/main.py",
+      "size": 19886,
+      "is_text": true
+    },
+    {
+      "path": "app/masking.py",
+      "size": 1818,
+      "is_text": true
+    },
+    {
+      "path": "app/models.py",
+      "size": 6671,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/__init__.py",
+      "size": 243,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/base.py",
+      "size": 4958,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/deps.py",
+      "size": 14136,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/docs.py",
+      "size": 4089,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/engine.py",
+      "size": 5229,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/evidence.py",
+      "size": 2018,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/maintenance.py",
+      "size": 4489,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/portability.py",
+      "size": 11071,
+      "is_text": true
+    },
+    {
+      "path": "app/rules/secrets.py",
+      "size": 20521,
+      "is_text": true
+    },
+    {
+      "path": "app/scoring.py",
+      "size": 6507,
+      "is_text": true
+    },
+    {
+      "path": "app/snapshot.py",
+      "size": 2393,
+      "is_text": true
+    },
+    {
+      "path": "app/static/style.css",
+      "size": 19955,
+      "is_text": true
+    },
+    {
+      "path": "app/templates/index.html",
+      "size": 15980,
+      "is_text": true
+    },
+    {
+      "path": "app/treescan.py",
+      "size": 8317,
+      "is_text": true
+    },
+    {
+      "path": "app/version.py",
+      "size": 146,
+      "is_text": true
+    },
+    {
+      "path": "docs/real-model-advice.json",
+      "size": 1367,
+      "is_text": true
+    },
+    {
+      "path": "docs/six-repos-3.2.md",
+      "size": 552,
+      "is_text": true
+    },
+    {
+      "path": "pytest.ini",
+      "size": 169,
+      "is_text": true
+    },
+    {
+      "path": "requirements.txt",
+      "size": 698,
+      "is_text": true
+    },
+    {
+      "path": "scripts/regen_golden.py",
+      "size": 2309,
+      "is_text": true
+    },
+    {
+      "path": "tests/conftest.py",
+      "size": 565,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/.github/workflows/ci.yml",
+      "size": 92,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/drive.py",
+      "size": 41,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/escape.py",
+      "size": 74,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/placeholder.py",
+      "size": 45,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/route.py",
+      "size": 55,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/unc.py",
+      "size": 38,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/url.py",
+      "size": 42,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/paths/users.md",
+      "size": 68,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/secrets/config.py",
+      "size": 142,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/secrets/docs/example.md",
+      "size": 48,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/secrets/env.fixture",
+      "size": 75,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/secrets/id_rsa",
+      "size": 115,
+      "is_text": true
+    },
+    {
+      "path": "tests/fixtures/secrets/test_dummy.py",
+      "size": 42,
+      "is_text": true
+    },
+    {
+      "path": "tests/golden/scoring_cases.json",
+      "size": 4020,
+      "is_text": true
+    },
+    {
+      "path": "tests/golden/six_repos.json",
+      "size": 4906,
+      "is_text": true
+    }
+  ],
+  "findings": [
+    {
+      "id": "R05-start-missing",
+      "rule_id": "R05",
+      "category": "deps",
+      "dimension": "deps",
+      "severity": "medium",
+      "title": "缺少可识别的构建/启动入口",
+      "file": "",
+      "line": 0,
+      "evidence_masked": "未找到 Makefile / Dockerfile / docker-compose* / *.sln(.slnx) / CMakeLists.txt / build.ps1 / build.bat / build.sh / 根目录 *.csproj，package.json 也未声明 start/dev/serve/build/compile（已检查根目录与一层普通子目录）",
+      "impact": "无法确认服务如何构建与启动，部署与验证成本高",
+      "fix": "补充 Dockerfile / Makefile 或构建脚本，或在 package.json 声明 start/dev/serve",
+      "hit_count": 1,
+      "confidence": "high",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "high",
+      "title": "硬编码路径（high）",
+      "file": "app/rules/portability.py",
+      "line": 33,
+      "evidence_masked": "抽样 63/63（100.00%），app/rules/portability.py 命中 2 处；前 3 处：app/rules/portability.py:33 C:\\foo）；app/rules/portability.py:207 /home/runner/",
+      "impact": "路径绑定本机环境，迁移到容器或 CI 会直接失败",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 2,
+      "confidence": "high",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
+      "file": "app/masking.py",
+      "line": 23,
+      "evidence_masked": "抽样 63/63（100.00%），app/masking.py 命中 1 处；前 3 处：app/masking.py:23 C:\\Users\\)[^\\s]+",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
+      "file": "tests/fixtures/paths/.github/workflows/ci.yml",
+      "line": 5,
+      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/.github/workflows/ci.yml 命中 1 处；前 3 处：tests/fixtures/paths/.github/workflows/ci.yml:5 /home/runner/work/repo",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
+      "file": "tests/fixtures/paths/drive.py",
+      "line": 1,
+      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/drive.py 命中 1 处；前 3 处：tests/fixtures/paths/drive.py:1 C:\\Users\\alice\\data.csv",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
+      "file": "tests/fixtures/paths/placeholder.py",
+      "line": 1,
+      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/placeholder.py 命中 1 处；前 3 处：tests/fixtures/paths/placeholder.py:1 C:\\Users\\%USERPROFILE%\\data",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
+      "file": "tests/fixtures/paths/users.md",
+      "line": 3,
+      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/users.md 命中 1 处；前 3 处：tests/fixtures/paths/users.md:3 /Users/alice/project/main.py`",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "low",
+      "title": "硬编码路径（low）",
+      "file": "tests/test_portability.py",
+      "line": 146,
+      "evidence_masked": "抽样 63/63（100.00%），tests/test_portability.py 命中 6 处；前 3 处：tests/test_portability.py:146 \\\\Users\\\\alice\\\\one；tests/test_portability.py:146 /Users/alice/two；tests/test_portability.py:160 \\\\Data\\\\file%d",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 6,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "info",
+      "title": "硬编码路径（info）",
+      "file": "AI_USAGE.md",
+      "line": 109,
+      "evidence_masked": "抽样 63/63（100.00%），AI_USAGE.md 命中 5 处；前 3 处：AI_USAGE.md:109 c:\\`；AI_USAGE.md:109 c:\\`；AI_USAGE.md:126 C:\\foo`」。",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 5,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "info",
+      "title": "硬编码路径（info）",
+      "file": "README.md",
+      "line": 194,
+      "evidence_masked": "抽样 63/63（100.00%），README.md 命中 2 处；前 3 处：README.md:194 c:\\`；README.md:194 c:\\`",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 2,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "info",
+      "title": "硬编码路径（info）",
+      "file": "tests/fixtures/paths/escape.py",
+      "line": 3,
+      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/escape.py 命中 2 处；前 3 处：tests/fixtures/paths/escape.py:3 c:\\Users\\real；tests/fixtures/paths/escape.py:4 C:\\NuGetPackages",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 2,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R08-hardcoded-path",
+      "rule_id": "R08",
+      "category": "portability",
+      "dimension": "portability",
+      "severity": "info",
+      "title": "硬编码路径（info）",
+      "file": "tests/fixtures/paths/unc.py",
+      "line": 1,
+      "evidence_masked": "抽样 63/63（100.00%），tests/fixtures/paths/unc.py 命中 1 处；前 3 处：tests/fixtures/paths/unc.py:1 \\\\server\\share\\file.txt",
+      "impact": "路径是示例/占位符或文档示例，风险较低",
+      "fix": "改为相对路径、环境变量或可配置参数",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R10-private-key",
+      "rule_id": "R10",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "私钥材料出现在仓库内容中",
+      "file": "tests/fixtures/secrets/id_rsa",
+      "line": 1,
+      "evidence_masked": "tests/fixtures/secrets/id_rsa:1 命中私钥头；同文件共 1 处",
+      "impact": "私钥随代码公开，可被直接用于冒充服务或解密流量",
+      "fix": "立即吊销并重新生成密钥，从版本库移除私钥材料",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R10-private-key",
+      "rule_id": "R10",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "私钥材料出现在仓库内容中",
+      "file": "tests/test_secrets.py",
+      "line": 225,
+      "evidence_masked": "tests/test_secrets.py:225 命中私钥头；同文件共 1 处",
+      "impact": "私钥随代码公开，可被直接用于冒充服务或解密流量",
+      "fix": "立即吊销并重新生成密钥，从版本库移除私钥材料",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R11-secret-token",
+      "rule_id": "R11",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "仓库内容包含疑似访问令牌",
+      "file": "tests/fixtures/secrets/config.py",
+      "line": 1,
+      "evidence_masked": "tests/fixtures/secrets/config.py:1 Bearer token（Bear***45）；tests/fixtures/secrets/config.py:2 数据库连接串（post***s@）；同文件共 2 处",
+      "impact": "测试/示例目录中的样例令牌，风险较低",
+      "fix": "确认是否为真实令牌；如是，立即吊销并改为环境变量注入",
+      "hit_count": 2,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R11-secret-token",
+      "rule_id": "R11",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "仓库内容包含疑似访问令牌",
+      "file": "tests/fixtures/secrets/env.fixture",
+      "line": 2,
+      "evidence_masked": "tests/fixtures/secrets/env.fixture:2 OpenAI key（sk-r***rs）；同文件共 1 处",
+      "impact": "测试/示例目录中的样例令牌，风险较低",
+      "fix": "确认是否为真实令牌；如是，立即吊销并改为环境变量注入",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R11-secret-token",
+      "rule_id": "R11",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "仓库内容包含疑似访问令牌",
+      "file": "tests/fixtures/secrets/test_dummy.py",
+      "line": 1,
+      "evidence_masked": "tests/fixtures/secrets/test_dummy.py:1 OpenAI key（sk-d***xx）；同文件共 1 处",
+      "impact": "测试/示例目录中的样例令牌，风险较低",
+      "fix": "确认是否为真实令牌；如是，立即吊销并改为环境变量注入",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R11-secret-token",
+      "rule_id": "R11",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "仓库内容包含疑似访问令牌",
+      "file": "tests/test_github.py",
+      "line": 237,
+      "evidence_masked": "tests/test_github.py:237 Bearer token（Bear***og）；同文件共 1 处",
+      "impact": "测试/示例目录中的样例令牌，风险较低",
+      "fix": "确认是否为真实令牌；如是，立即吊销并改为环境变量注入",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R11-secret-token",
+      "rule_id": "R11",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "low",
+      "title": "仓库内容包含疑似访问令牌",
+      "file": "tests/test_secrets.py",
+      "line": 92,
+      "evidence_masked": "tests/test_secrets.py:92 OpenAI key（sk-r***rs）；tests/test_secrets.py:166 OpenAI key（sk-a***st）；tests/test_secrets.py:179 OpenAI key（sk-a***st）；同文件共 6 处",
+      "impact": "测试/示例目录中的样例令牌，风险较低",
+      "fix": "确认是否为真实令牌；如是，立即吊销并改为环境变量注入",
+      "hit_count": 6,
+      "confidence": "medium",
+      "cap_eligible": false
+    },
+    {
+      "id": "R11-secret-token",
+      "rule_id": "R11",
+      "category": "secrets",
+      "dimension": "secrets",
+      "severity": "info",
+      "title": "仓库内容包含疑似访问令牌",
+      "file": "tests/fixtures/secrets/docs/example.md",
+      "line": 1,
+      "evidence_masked": "tests/fixtures/secrets/docs/example.md:1 OpenAI key（sk-r***rs）；同文件共 1 处",
+      "impact": "规则定义或文档中的令牌形态示例，非真实凭据",
+      "fix": "确认是否为真实令牌；如是，立即吊销并改为环境变量注入",
+      "hit_count": 1,
+      "confidence": "medium",
+      "cap_eligible": false
+    }
+  ],
+  "checks": [
+    {
+      "rule_id": "R01",
+      "status": "pass",
+      "basis": "根目录 README.md",
+      "file": "README.md",
+      "line": 0
+    },
+    {
+      "rule_id": "R02",
+      "status": "pass",
+      "basis": "根目录 README.md 覆盖 4 类说明：A 安装/构建、B 运行/使用、C 配置/环境、D 依赖/前置",
+      "file": "README.md",
+      "line": 0
+    },
+    {
+      "rule_id": "R03",
+      "status": "pass",
+      "basis": "根目录 requirements.txt",
+      "file": "requirements.txt",
+      "line": 0
+    },
+    {
+      "rule_id": "R04",
+      "status": "pass",
+      "basis": "根目录 requirements.txt 浮动 0 个 / 总计 31 个（≤50%），无 lockfile",
+      "file": "requirements.txt",
+      "line": 0
+    },
+    {
+      "rule_id": "R05",
+      "status": "fail",
+      "basis": "根目录与一层普通子目录均无构建/启动入口",
+      "file": "",
+      "line": 0
+    },
+    {
+      "rule_id": "R06",
+      "status": "pass",
+      "basis": "共 0 个 Windows 脚本（无），占脚本总量 0/0",
+      "file": "",
+      "line": 0
+    },
+    {
+      "rule_id": "R07",
+      "status": "n/a",
+      "basis": "无 Windows 脚本，规则不适用",
+      "file": "",
+      "line": 0
+    },
+    {
+      "rule_id": "R08",
+      "status": "fail",
+      "basis": "抽样 63/63（100.00%），命中 11 个文件（high 1 / low 6 / info 4）；另有提示 10 条",
+      "file": "app/rules/portability.py",
+      "line": 33
+    },
+    {
+      "rule_id": "R09",
+      "status": "pass",
+      "basis": "未发现 .env 入库，.gitignore 已包含 .env",
+      "file": ".gitignore",
+      "line": 0
+    },
+    {
+      "rule_id": "R10",
+      "status": "pass",
+      "basis": "抽样 63/63（100.00%），命中 2 个文件；仅提示 2 条",
+      "file": "tests/fixtures/secrets/id_rsa",
+      "line": 1
+    },
+    {
+      "rule_id": "R11",
+      "status": "pass",
+      "basis": "抽样 63/63（100.00%），命中 6 个文件（critical 0）；仅提示 6 条",
+      "file": "tests/fixtures/secrets/config.py",
+      "line": 1
+    },
+    {
+      "rule_id": "R12",
+      "status": "pass",
+      "basis": "根目录存在许可证文件 LICENSE",
+      "file": "LICENSE",
+      "line": 0
+    },
+    {
+      "rule_id": "R13",
+      "status": "pass",
+      "basis": "最近推送距今约 0 天（≤ 12 个月）",
+      "file": "",
+      "line": 0
+    },
+    {
+      "rule_id": "R14",
+      "status": "pass",
+      "basis": "仓库未归档（archived=false）",
+      "file": "",
+      "line": 0
+    }
+  ],
+  "score": {
+    "total": 94,
+    "raw_total": 94,
+    "grade": "A",
+    "verdict": "可直接接入",
+    "caps": [],
+    "dimensions": [
+      {
+        "key": "secrets",
+        "label": "密钥与敏感信息",
+        "weight": 30,
+        "deduction": 0,
+        "score": 30
+      },
+      {
+        "key": "portability",
+        "label": "平台可移植",
+        "weight": 25,
+        "deduction": 2,
+        "score": 23
+      },
+      {
+        "key": "docs",
+        "label": "文档完备",
+        "weight": 20,
+        "deduction": 0,
+        "score": 20
+      },
+      {
+        "key": "deps",
+        "label": "依赖与入口",
+        "weight": 15,
+        "deduction": 4,
+        "score": 11
+      },
+      {
+        "key": "maintenance",
+        "label": "维护状态",
+        "weight": 10,
+        "deduction": 0,
+        "score": 10
+      }
+    ],
+    "deductions": [
+      {
+        "rule_id": "R08",
+        "points": -2,
+        "reason": "硬编码路径（high）",
+        "file": "app/rules/portability.py"
+      },
+      {
+        "rule_id": "R05",
+        "points": -4,
+        "reason": "缺少可识别的构建/启动入口",
+        "file": ""
+      }
+    ]
+  },
+  "cache": {
+    "hit": false,
+    "stale": false,
+    "cached_at": "2026-11-27T09:50:20.514179+08:00"
+  },
+  "warnings": [],
+  "error": null,
+  "engine_version": "repogate-3.2",
+  "scanned_at": "2026-11-27T09:50:04.457802+08:00"
+}

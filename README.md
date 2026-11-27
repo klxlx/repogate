@@ -230,7 +230,8 @@ advice 缓存：`.cache/advice/<owner>__<repo>/<sha>__<model>__advice-v2.json`�
 
 ## 交付记录
 
-- 六仓（引擎 3.2）：octocat `59 D`、requests `95 A`、PowerToys `84 B`、vscode `91 A`、gitleaks `98 A`、full-stack `73 B`。
+- 六仓（引擎 3.2）：octocat `59 D`、requests `95 A`、PowerToys `84 B`、vscode `91 A`、gitleaks `98 A`、full-stack `73 B`；明细见 `docs/six-repos-3.2.md`。
+- 自跑 `klxlx/repogate`：`94 A`，`R12` 根目录 `LICENSE` 判定 `pass`；缓存命中 `hit=true, stale=false`；原始响应见 `docs/self-scan.json`。
 - 真实模型：DeepSeek `deepseek-flash`，`latency_ms=2828`、`tokens=1467`、`source=model`；原始 JSON 见 `docs/real-model-advice.json`。
 - 错误态截图：`docs/screenshot-error-offline.png`、`docs/screenshot-error-429.png`、`docs/screenshot-error-timeout.png`。
 - AI 使用记录与机制总结：`AI_USAGE.md`。

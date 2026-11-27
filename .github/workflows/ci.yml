@@ -22,7 +22,7 @@ jobs:
       - name: 语法级静态检查
         run: |
           pip install ruff
-          ruff check --select E9,F63,F7,F82 app tests
+          ruff check --select E9,F63,F7,F82 app tests --exclude tests/fixtures
 
       - name: 运行测试（联网 golden 默认跳过）
         run: python -m pytest -q

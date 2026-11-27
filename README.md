@@ -27,7 +27,7 @@ RepoGate 的取舍是：**只读当前快照，不 clone、不执行仓库代码
 
 适合：Windows 桌面/内网团队在引入 Python、Node、Go、.NET 项目前做一次快速准入。不适合：正式安全审计、漏洞利用验证、私有仓库、Git 历史取证、自动改代码。
 
-## 2. 三条命令跑起来
+## 2. 四步跑起来
 
 Windows（PowerShell 7）：
 
@@ -64,7 +64,7 @@ Copy-Item .env.example .env
 
 ![桌面报告页](docs/screenshot-report.png)
 
-真实模型 AI 卡（DeepSeek `deepseek-flash`，latency `2828ms`，tokens `1467`）：
+真实模型 AI 卡（DeepSeek `deepseek-flash`，多次调用 2.2–2.9s，约 1.4k tokens）：
 
 ![真实模型 AI 建议](docs/screenshot-ai-deepseek.png)
 
@@ -83,6 +83,8 @@ Copy-Item .env.example .env
 ![断网错误态](docs/screenshot-error-offline.png)
 ![429 错误态](docs/screenshot-error-429.png)
 ![超时错误态](docs/screenshot-error-timeout.png)
+
+报告页可直接用 `GET /?repo=<仓库地址>` 打开，便于把结论原样发给同事；页面上的「重新扫描」按钮等价于 `refresh=1`，会跳过缓存并消耗一次 GitHub API 配额。模型建议走单独缓存（sha + model + prompt 版本），重复打开不会重复计费。
 
 ## 4. 评分模型
 
@@ -231,7 +233,7 @@ advice 缓存：`.cache/advice/<owner>__<repo>/<sha>__<model>__advice-v2.json`�
 ## 交付记录
 
 - 六仓（引擎 3.2）：octocat `59 D`、requests `95 A`、PowerToys `84 B`、vscode `91 A`、gitleaks `98 A`、full-stack `73 B`；明细见 `docs/six-repos-3.2.md`。
-- 自跑 `klxlx/repogate`：`94 A`，`R12` 根目录 `LICENSE` 判定 `pass`；缓存命中 `hit=true, stale=false`；原始响应见 `docs/self-scan.json`。
-- 真实模型：DeepSeek `deepseek-flash`，`latency_ms=2828`、`tokens=1467`、`source=model`；原始 JSON 见 `docs/real-model-advice.json`。
+- 自跑 `klxlx/repogate`：`94 A`，`R12` 根目录 `LICENSE` 判定 `pass`；缓存命中 `hit=true, stale=false`；原始响应见 `docs/self-scan.json`。其中唯一的 `R08 high` 命中 `app/rules/portability.py:33`——那是 R08 自己正则里的 `C:\foo` 模式文本，不是真实硬编码路径；与 R11 的规则定义豁免同类，R08 尚未加同款豁免，已记入已知限制，不靠调权重掩盖。
+- 真实模型：DeepSeek `deepseek-flash` 已跑通（`source=model`，latency 2.2–2.9s、约 1.4k tokens）；原始 JSON 见 `docs/real-model-advice.json`，卡面截图见 `docs/screenshot-ai-deepseek.png`。
 - 错误态截图：`docs/screenshot-error-offline.png`、`docs/screenshot-error-429.png`、`docs/screenshot-error-timeout.png`。
 - AI 使用记录与机制总结：`AI_USAGE.md`。

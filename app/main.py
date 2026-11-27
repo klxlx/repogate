@@ -9,6 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -47,7 +48,12 @@ from .treescan import scan_tree
 from .version import ENGINE_VERSION, SCHEMA_VERSION
 
 BASE_DIR = Path(__file__).resolve().parent
+ENV_FILE = BASE_DIR.parent / ".env"
 logger = logging.getLogger("repogate")
+
+# README 的配置方式是复制 .env.example 到项目根目录 .env；这里显式加载，
+# 避免仅靠 shell 环境变量导致页面显示「未配置模型」。
+load_dotenv(ENV_FILE, override=False)
 
 _HINT_SUFFIX_RE = re.compile(r"；(?:另)?(?:仅)?提示 \d+ 条(?:（-\d+）)?$")
 
@@ -504,7 +510,12 @@ async def api_rules() -> RulesResponse:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
+async def index(
+    request: Request,
+    repo: str | None = Query(None, description="可选：直接渲染该仓库报告，便于分享链接"),
+) -> HTMLResponse:
+    if repo:
+        return await _render_report(request, repo, refresh=False)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -513,9 +524,15 @@ async def index(request: Request) -> HTMLResponse:
 
 
 @app.post("/", response_class=HTMLResponse)
-async def index_submit(request: Request, repo_url: str = Form(...)) -> HTMLResponse:
+async def index_submit(
+    request: Request, repo_url: str = Form(...), refresh: str = Form("0")
+) -> HTMLResponse:
+    return await _render_report(request, repo_url, refresh=refresh == "1")
+
+
+async def _render_report(request: Request, repo_url: str, *, refresh: bool) -> HTMLResponse:
     try:
-        result = await _inspect(repo_url)
+        result = await _inspect(repo_url, refresh=refresh)
     except ScanError as error:
         logger.info("inspect failed code=%s repo_url=%s", error.code, repo_url)
         return templates.TemplateResponse(

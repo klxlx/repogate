@@ -75,6 +75,14 @@ class AdviceValidationError(ValueError):
     """模型输出不符合服务端 schema。"""
 
 
+class AdviceCallError(ValueError):
+    """模型调用失败；reason 用于区分鉴权、额度、限流、超时与坏响应。"""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 @dataclass
 class RuleAdvice:
     title: str
@@ -267,11 +275,18 @@ def build_prompt(context: dict[str, Any]) -> str:
 
 
 def _allowed_rules(result: InspectResponse) -> set[str]:
-    return {
+    """允许模型引用的规则：失败/降级规则，以及任何有 finding 的规则。
+
+    只放 fail 会误伤「R09 low（.gitignore 未含 .env）」这类提示项：
+    模型给出合理建议却因规则不在白名单被整条丢弃，最后退化成 rules fallback。
+    """
+    allowed = {
         check.rule_id
         for check in result.checks
         if check.status in {"fail", "degraded", "warn"}
     }
+    allowed |= {finding.rule_id for finding in result.findings}
+    return allowed
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -468,7 +483,7 @@ async def _call_model(
 ) -> tuple[str, int, int]:
     config = _llm_config()
     if config is None:
-        raise AdviceValidationError("未配置 LLM")
+        raise AdviceCallError("missing_config", "未配置 LLM")
     base, key, model = config
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     payload = {
@@ -478,14 +493,14 @@ async def _call_model(
             {"role": "user", "content": build_prompt(context)},
         ],
         "temperature": 0.2,
-        "max_tokens": 600,
+        "max_tokens": 900,
     }
-    # DeepSeek V4 默认把 600 token 预算全部用在 reasoning_content，content 为空。
+    # DeepSeek V4 默认把 token 预算全部用在 reasoning_content，content 为空。
     # 仅对显式配置或 DeepSeek 端点关闭 thinking，保持其他 OpenAI 兼容端点不受影响。
     if os.environ.get("LLM_DISABLE_THINKING", "").strip() == "1" or "deepseek" in base.lower():
         payload["thinking"] = {"type": "disabled"}
     started = time.monotonic()
-    last_error: Exception | None = None
+    last_error: AdviceCallError | None = None
     for attempt in range(2):
         try:
             if transport is not None:
@@ -502,22 +517,44 @@ async def _call_model(
                 if close:
                     await client.aclose()
             if response.status_code >= 400:
-                raise AdviceValidationError(f"LLM HTTP {response.status_code}")
-            body = response.json()
+                raise AdviceCallError(_http_reason(response.status_code), f"LLM HTTP {response.status_code}")
+            try:
+                body = response.json()
+            except ValueError as exc:
+                raise AdviceCallError("bad_json", "LLM 响应不是合法 JSON") from exc
             choices = body.get("choices") if isinstance(body, dict) else None
             if not isinstance(choices, list) or not choices:
-                raise AdviceValidationError("LLM 响应缺少 choices")
+                raise AdviceCallError("bad_response", "LLM 响应缺少 choices")
             content = choices[0].get("message", {}).get("content")
             if not isinstance(content, str):
-                raise AdviceValidationError("LLM 响应缺少 content")
+                raise AdviceCallError("bad_response", "LLM 响应缺少 content")
             usage = body.get("usage") if isinstance(body, dict) else {}
             tokens = int(usage.get("total_tokens") or 0) if isinstance(usage, dict) else 0
             return content, tokens, int(round((time.monotonic() - started) * 1000))
-        except (httpx.HTTPError, ValueError, TypeError, AdviceValidationError) as exc:
+        except AdviceCallError as exc:
             last_error = exc
-            if attempt == 0:
-                await asyncio.sleep(0.5)
-    raise AdviceValidationError(f"LLM 调用失败：{last_error}") from last_error
+        except httpx.TimeoutException as exc:
+            last_error = AdviceCallError("timeout", f"LLM 超时：{exc}")
+        except httpx.HTTPError as exc:
+            last_error = AdviceCallError("network_error", f"LLM 网络错误：{exc}")
+        except (ValueError, TypeError) as exc:
+            last_error = AdviceCallError("llm_error", f"LLM 调用失败：{exc}")
+        if attempt == 0:
+            await asyncio.sleep(0.5)
+    assert last_error is not None
+    raise last_error
+
+
+def _http_reason(status: int) -> str:
+    if status in {401, 403}:
+        return "auth_error"
+    if status == 402:
+        return "quota_exceeded"
+    if status == 429:
+        return "rate_limited"
+    if status >= 500:
+        return "upstream_error"
+    return "http_error"
 
 
 async def build_advice(
@@ -562,10 +599,16 @@ async def build_advice(
             repo=result.repo.full_name,
             commit_sha=sha,
         )
-    except (AdviceValidationError, ValueError, TypeError) as exc:
+    except (AdviceValidationError, AdviceCallError, ValueError, TypeError) as exc:
         advice = build_rules_fallback(result)
         advice.model = configured[2]
-        advice.fallback_reason = "schema_invalid" if isinstance(exc, AdviceValidationError) else "llm_error"
+        if isinstance(exc, AdviceCallError):
+            advice.fallback_reason = exc.reason
+        elif isinstance(exc, AdviceValidationError):
+            reason = "empty_actions" if "actions 为空" in str(exc) else "schema_invalid"
+            advice.fallback_reason = reason
+        else:
+            advice.fallback_reason = "llm_error"
         advice.warnings = [
             WarningInfo(
                 code="ADVICE_FALLBACK",

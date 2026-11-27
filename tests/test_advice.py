@@ -339,3 +339,69 @@ def test_page_escapes_model_text(monkeypatch) -> None:
     assert "<script>alert" not in html
     assert "&lt;img src=x&gt;" in html
     assert "<img src=x>" not in html
+
+
+def test_allowed_rules_include_low_finding_rules() -> None:
+    """R09 low（.gitignore 未含 .env）也允许模型引用，否则合理建议会被整条丢弃。"""
+    report = make_report()
+    report.findings = [report.findings[0].model_copy(update={"severity": "low"})]
+    report.checks = [check.model_copy(update={"status": "pass"}) for check in report.checks]
+    allowed = advice._allowed_rules(report)
+    assert "R09" in allowed
+
+
+def test_quota_error_is_classified(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "http://llm.test/v1")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(402, json={"error": "insufficient balance"})
+
+    report = make_report()
+    result = asyncio.run(advice.build_advice(report, transport=httpx.MockTransport(handler)))
+    assert result.source == "rules_fallback"
+    assert result.fallback_reason == "quota_exceeded"
+    assert "402" in result.warnings[0].message
+
+
+def test_timeout_error_is_classified(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "http://llm.test/v1")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timeout")
+
+    report = make_report()
+    result = asyncio.run(advice.build_advice(report, transport=httpx.MockTransport(handler)))
+    assert result.fallback_reason == "timeout"
+
+
+def test_refresh_button_passes_flag(monkeypatch) -> None:
+    calls: dict[str, bool] = {}
+
+    async def fake_inspect(_: str, *, refresh: bool = False) -> InspectResponse:
+        calls["refresh"] = refresh
+        return make_report()
+
+    monkeypatch.setattr(main, "_inspect", fake_inspect)
+    client = TestClient(main.app)
+    response = client.post(
+        "/", data={"repo_url": "https://github.com/octocat/Hello-World", "refresh": "1"}
+    )
+    assert response.status_code == 200
+    assert calls["refresh"] is True
+    assert "重新扫描" in response.text
+
+
+def test_get_with_repo_renders_shared_report(monkeypatch) -> None:
+    async def fake_inspect(_: str, *, refresh: bool = False) -> InspectResponse:
+        return make_report()
+
+    monkeypatch.setattr(main, "_inspect", fake_inspect)
+    client = TestClient(main.app)
+    response = client.get("/?repo=https://github.com/octocat/Hello-World")
+    assert response.status_code == 200
+    assert "59" in response.text
+    assert "不建议接入" in response.text

@@ -101,6 +101,16 @@ h2 {
   background: #1e40af;
 }
 
+.lookup button.secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid #c7d2fe;
+}
+
+.lookup button.secondary:hover {
+  background: #eef2ff;
+}
+
 .examples {
   display: flex;
   flex-wrap: wrap;
